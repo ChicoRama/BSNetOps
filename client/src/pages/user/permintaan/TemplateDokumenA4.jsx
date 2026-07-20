@@ -1,10 +1,11 @@
 import React from 'react';
 
-const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [] }, ref) => {
-  // Minimal 5 baris, atau mengikuti jumlah barang
+const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [], adminData }, ref) => {
   const MIN_ROWS = 5;
   const rowCount = Math.max(MIN_ROWS, daftarBarang.length);
   const rows = Array.from({ length: rowCount });
+
+  const tanggalCetak = new Date().toLocaleDateString('id-ID');
 
   return (
     <div 
@@ -12,7 +13,7 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [] }, ref
       className="bg-white w-[210mm] h-[297mm] p-[10mm] text-black font-sans box-border"
     >
       {/* HEADER */}
-      <div className="flex justify-between items-start mb-6 border-b-2 border-black pb-2">
+      <div className="flex justify-between items-start mb-4 border-b-2 border-black pb-2">
         <div className="flex flex-col">
           <img src="/images/logo-BSN.png" alt="Logo BSN" className="h-15 w-auto object-contain mb-1" />
           <div className="flex flex-col">
@@ -22,7 +23,6 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [] }, ref
         
         <h1 className="text-xl font-bold uppercase underline underline-offset-4 decoration-2 mt-2">Bon Barang</h1>
         
-        {/* Bagian ini diperbaiki: lebar ditambah dan justify-end digunakan */}
         <div className="text-[12px] w-[200px] text-right font-bold mt-2">
           <div className="flex justify-end items-center gap-2">
             <span>Unit:</span>
@@ -33,20 +33,28 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [] }, ref
           <div className="flex justify-end items-center gap-2 mt-2">
             <span>Tanggal:</span>
             <span className="border-b border-black w-[120px] inline-block text-center">
-              {new Date().toLocaleDateString('id-ID')}
+              {tanggalCetak}
             </span>
           </div>
         </div>
       </div>
 
-      {/* TABEL */}
+      {/* INFORMASI PEMOHON (Keterangan/Keperluan dari user ditampilkan di sini) */}
+      <div className="mb-4 text-xs border border-black p-2.5 rounded bg-gray-50/50">
+        <span className="font-bold underline block mb-1">Informasi & Keperluan Pemohon:</span>
+        <p className="italic text-gray-800 leading-relaxed">
+          "{formData?.alasanDibutuhkan || formData?.keperluan || 'Tidak ada keterangan tambahan.'}"
+        </p>
+      </div>
+
+      {/* TABEL BARANG */}
       <table className="w-full border-collapse border-2 border-black text-sm mb-6">
         <thead>
           <tr className="bg-gray-100 font-bold">
             <th className="border-2 border-black w-[10%] py-2">No</th>
-            <th className="border-2 border-black w-[45%] py-2">Nama Barang</th>
+            <th className="border-2 border-black w-[40%] py-2">Nama Barang</th>
             <th className="border-2 border-black w-[15%] py-2">Jumlah</th>
-            <th className="border-2 border-black w-[30%] py-2">Keterangan</th>
+            <th className="border-2 border-black w-[35%] py-2">Keterangan / Penyesuaian</th>
           </tr>
         </thead>
         <tbody>
@@ -57,9 +65,9 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [] }, ref
                 <td className="border-2 border-black text-center font-bold">{index + 1}</td>
                 <td className="border-2 border-black px-3 capitalize font-semibold">{barang ? barang.namaAset : ''}</td>
                 <td className="border-2 border-black text-center font-bold">{barang ? barang.jumlah : ''}</td>
-                {/* Teks Keterangan sudah diperbesar ke text-sm */}
-                <td className="border-2 border-black px-2 text-sm font-medium">
-                  {index === 0 ? formData?.alasanDibutuhkan : ''}
+                {/* Kolom Keterangan / Remarks Penyesuaian per baris barang dari Admin */}
+                <td className="border-2 border-black px-2 text-xs font-medium text-red-600">
+                  {barang?.remark || ''}
                 </td>
               </tr>
             );
@@ -79,12 +87,45 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [] }, ref
         </thead>
         <tbody>
           <tr className="h-[100px]">
+            
             <td className="border-2 border-black align-bottom pb-2"></td>
-            <td className="border-2 border-black align-bottom pb-2"></td>
-            <td className="border-2 border-black align-bottom pb-2"></td>
-            <td className="border-2 border-black align-bottom pb-2 capitalize font-bold text-xs">
-              {formData?.namaLengkap}
+
+            {/* KOLOM BARANG TELAH DIKELUARKAN OLEH (QR Pak Agus) */}
+            <td className="border-2 border-black align-bottom pb-2">
+              <div className="flex flex-col items-center justify-end h-full w-full">
+                {adminData?.isDiserahkan && (
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`Released by Agus (Admin GA) pada ${adminData.tanggal}`)}`} 
+                    alt="QR Admin Agus" 
+                    className="w-16 h-16 mb-1 object-contain opacity-90"
+                    crossOrigin="anonymous"
+                  />
+                )}
+                <span className="capitalize font-bold text-xs mt-1">
+                  {adminData?.isDiserahkan ? 'Agus' : ''}
+                </span>
+              </div>
             </td>
+
+            <td className="border-2 border-black align-bottom pb-2"></td>
+            
+            {/* KOLOM PEMOHON (QR Pemohon) */}
+            <td className="border-2 border-black align-bottom pb-2">
+              <div className="flex flex-col items-center justify-end h-full w-full">
+                {formData?.namaLengkap && (
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`Requested by ${formData.namaLengkap} pada ${tanggalCetak}`)}`} 
+                    alt="QR Signature" 
+                    className="w-16 h-16 mb-1 object-contain opacity-90"
+                    crossOrigin="anonymous"
+                  />
+                )}
+                <span className="capitalize font-bold text-xs mt-1">
+                  {formData?.namaLengkap}
+                </span>
+              </div>
+            </td>
+
           </tr>
         </tbody>
       </table>

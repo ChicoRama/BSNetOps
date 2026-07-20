@@ -15,6 +15,7 @@ import UserDashboard from "./pages/UserDashboard.jsx";
 import StokBarang from './pages/admin/stokbarang/StokBarang';
 import UserManagement from './pages/admin/manajemenuser/UserManagement'; 
 import KategoriBarang from './pages/admin/kategoribarang/KategoriBarang';
+import PenyetujuanBarang from './pages/admin/penyetujuan/PenyetujuanBarang.jsx';
 import LogAktifitas from './pages/admin/log/LogAktifitas.jsx';
 import EditProfil from './pages/admin/user/EditProfil';
 
@@ -70,6 +71,7 @@ export default function App() {
             {currentView === 'kategori-barang' && <KategoriBarang />}
             {currentView === 'activity-log' && <ActivityLog />}
             {currentView === 'edit-profil' && <EditProfil />}
+            {currentView === 'penyetujuan-barang' && <PenyetujuanBarang/>}
           </DashboardLayout>
         } />
 

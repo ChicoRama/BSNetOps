@@ -1,16 +1,15 @@
 import { useState } from "react";
 import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
-import { useNavigate } from "react-router-dom"; //  IMPOR INI untuk navigasi halaman
+import { useNavigate } from "react-router-dom"; 
+import { supabase } from "../../supabaseClient"; 
 
 export default function LoginPage() {
-  const navigate = useNavigate(); //  INISIALISASI NAVIGATE
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
-
-  // CONTROL MODAL FLOW
   const [showForgot, setShowForgot] = useState(false);
 
   const [form, setForm] = useState({
-    username: "",
+    username: "", 
     password: "",
     remember: false,
   });
@@ -20,6 +19,7 @@ export default function LoginPage() {
   const [error, setError] = useState({
     username: "",
     password: "",
+    general: "", 
   });
 
   const handleChange = (e) => {
@@ -33,44 +33,61 @@ export default function LoginPage() {
     setError({
       ...error,
       [name]: "",
+      general: "", 
     });
   };
 
-  const handleLogin = (e) => {
+  // FUNGSI LOGIN YANG SUDAH FULL UPDATE
+  const handleLogin = async (e) => {
     e.preventDefault();
 
-    let newError = {
-      username: "",
-      password: "",
-    };
+    let newError = { username: "", password: "", general: "" };
 
-    if (!form.username) newError.username = "Masukkan username atau email";
+    if (!form.username) newError.username = "Masukkan email";
     if (!form.password) newError.password = "Masukkan password";
 
-    //  VALIDASI PASSWORD DUMMY
-    if (form.password && form.password !== "123456") {
-      newError.password = "Username atau password salah";
-    }
-
     setError(newError);
-
     if (newError.username || newError.password) return;
 
-    // LOGIKA REDIRECT BERDASARKAN USERNAME (Simulasi Role Base Login)
-    const inputUser = form.username.toLowerCase();
+    // 1. PROSES LOGIN KE SUPABASE AUTH
+    const inputEmail = form.username.toLowerCase();
+    const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
+      email: inputEmail, 
+      password: form.password,
+    });
 
-    if (inputUser === "admin") {
+    if (supabaseError) {
+      setError({ ...newError, general: "Email atau password salah" });
+      return;
+    }
+
+    // 2. CEK ROLE USER DI TABEL 'user_roles'
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('email', inputEmail)
+      .single(); 
+
+    let userRole = "user"; 
+    
+    if (roleData && roleData.role) {
+      userRole = roleData.role; 
+    }
+
+    console.log("Data role dari tabel:", roleData);
+    console.log("Role yang dipakai untuk redirect:", userRole);
+
+    // 3. REDIRECT BERDASARKAN ROLE
+    if (userRole === "admin") {
       navigate("/admin");
-    } else if (inputUser === "manager") {
+    } else if (userRole === "manager") {
       navigate("/manager");
     } else {
-      // Jika diisi nama lain (misal: chico, staff, dll) otomatis masuk sebagai User/Staff biasa
       navigate("/user");
     }
   };
 
-  // RESET PASSWORD SUBMIT
-  const handleForgot = (e) => {
+  const handleForgot = async (e) => {
     e.preventDefault();
 
     if (!forgotEmail) {
@@ -78,13 +95,15 @@ export default function LoginPage() {
       return;
     }
 
-    alert("Link reset password dikirim ke email (dummy)");
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail);
 
-    // CLOSE RESET POPUP
-    setShowForgot(false);
-
-    // RESET INPUT
-    setForgotEmail("");
+    if (error) {
+      alert(`Gagal: ${error.message}`);
+    } else {
+      alert("Link reset password berhasil dikirim ke email kamu!");
+      setShowForgot(false);
+      setForgotEmail("");
+    }
   };
 
   return (
@@ -97,10 +116,9 @@ export default function LoginPage() {
       />
       <div className="absolute inset-0 bg-black/35" />
 
-      {/* LOGIN MODAL (HIDE WHEN FORGOT ACTIVE) */}
+      {/* LOGIN MODAL */}
       {!showForgot && (
         <section className="relative z-10 flex min-h-screen items-center justify-center px-6">
-
           <div className="relative w-full max-w-[400px] rounded-2xl bg-white px-8 py-8 shadow-2xl">
 
             {/* CLOSE */}
@@ -123,22 +141,26 @@ export default function LoginPage() {
 
             {/* FORM */}
             <form onSubmit={handleLogin} className="space-y-4">
+              
+              {error.general && (
+                <div className="rounded-lg bg-red-100 p-2 text-center text-sm text-red-600">
+                  {error.general}
+                </div>
+              )}
 
-              {/* USERNAME */}
+              {/* EMAIL */}
               <div>
                 <label className="mb-1 block text-sm font-semibold">
-                  Username / Email
+                  Email
                 </label>
-
                 <input
-                  type="text"
+                  type="email" 
                   name="username"
                   value={form.username}
                   onChange={handleChange}
-                  placeholder="Username;88po8"
+                  placeholder="contoh@email.com"
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
                 />
-
                 {error.username && (
                   <p className="mt-1 text-xs text-red-500">
                     {error.username}
@@ -151,7 +173,6 @@ export default function LoginPage() {
                 <label className="mb-1 block text-sm font-semibold">
                   Password
                 </label>
-
                 <input
                   type={showPassword ? "text" : "password"}
                   name="password"
@@ -160,7 +181,6 @@ export default function LoginPage() {
                   placeholder="Password"
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
                 />
-
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -168,7 +188,6 @@ export default function LoginPage() {
                 >
                   {showPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
-
                 {error.password && (
                   <p className="mt-1 text-xs text-red-500">
                     {error.password}
@@ -178,7 +197,6 @@ export default function LoginPage() {
 
               {/* REMEMBER + FORGOT */}
               <div className="flex items-center justify-between text-xs">
-
                 <label className="flex cursor-pointer items-center gap-2 font-medium select-none">
                   <input
                     type="checkbox"
@@ -189,8 +207,6 @@ export default function LoginPage() {
                   />
                   Ingat Saya
                 </label>
-
-                {/* FORGOT PASSWORD */}
                 <button
                   type="button"
                   onClick={() => setShowForgot(true)}
@@ -198,7 +214,6 @@ export default function LoginPage() {
                 >
                   Lupa password?
                 </button>
-
               </div>
 
               {/* LOGIN BUTTON */}
@@ -258,7 +273,6 @@ export default function LoginPage() {
           </div>
         </div>
       )}
-
     </main>
   );
 }

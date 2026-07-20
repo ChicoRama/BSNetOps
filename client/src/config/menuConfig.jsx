@@ -8,15 +8,17 @@ import {
   Boxes, 
   History,
   FileText,
-  ActivityIcon
+  ActivityIcon,
+  Check
 } from 'lucide-react';
 
 export const menuConfig = {
   admin: [
     { name: 'Dashboard', icon: <LayoutDashboard size={20}/> },
     { name: 'Stok Barang', icon: <Package size={20}/> },
-    { name: 'Manajemen User', icon: <Users size={20}/> },
     { name: 'Kategori Barang', icon: <Boxes size={20}/> },
+    { name: 'Penyetujuan Barang', icon: <Check size={20}/>},
+    { name: 'Manajemen User', icon: <Users size={20}/> },
     { name: 'Activity Log', icon: <ActivityIcon size={20}/> },
   ],
   manager: [

@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { FaXmark } from "react-icons/fa6";
+import { useNavigate } from "react-router-dom"; 
+import { supabase } from "../../supabaseClient";
 
 export default function RegisterPage() {
+  const navigate = useNavigate(); 
   const [form, setForm] = useState({
     username: "",
     email: "",
@@ -27,7 +30,7 @@ export default function RegisterPage() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     let newError = {};
@@ -54,10 +57,41 @@ export default function RegisterPage() {
     }
 
     setError(newError);
-
     if (Object.keys(newError).length > 0) return;
 
-    alert("Registrasi berhasil");
+    // 1. DAFTARKAN KE SUPABASE AUTH
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+    });
+
+    if (authError) {
+      alert(`Gagal mendaftar: ${authError.message}`);
+      return;
+    }
+
+    // 2. SIMPAN DATA TAMBAHAN KE TABEL 'user_roles'
+    const { error: dbError } = await supabase
+      .from('user_roles')
+      .insert([
+        {
+          email: form.email.toLowerCase(),
+          role: 'user', // Otomatis jadi user biasa saat pertama daftar
+          username: form.username,
+          staff_id: form.staffId,
+          unit: form.unit
+        }
+      ]);
+
+    if (dbError) {
+      console.error("Gagal simpan data ke tabel:", dbError.message);
+      // Peringatan jika Auth berhasil tapi gagal masuk tabel
+      alert("Akun terbuat tapi data profil gagal disimpan. Hubungi admin."); 
+      return;
+    }
+
+    alert("Registrasi berhasil! Silakan login.");
+    navigate("/login"); // Otomatis pindah ke halaman login
   };
 
   return (
@@ -187,7 +221,7 @@ export default function RegisterPage() {
                   name="unit"
                   value={form.unit}
                   onChange={handleChange}
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40 cursor-pointer"
+                  className="w-full cursor-pointer rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
                 >
                   <option value="" disabled hidden>Pilih Unit</option>
                   <option value="KC Semarang">KC Semarang</option>

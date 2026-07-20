@@ -88,7 +88,7 @@ export default function AdminDashboard({ role = 'admin' }) {
                       const { payload } = entry;
                       return (
                         <span className="text-zinc-600 font-medium">
-                          {value}: <span className="font-bold text-zinc-900">{payload.value}</span>
+                          {value}: <span className="font-bold text-zinc-600">{payload.value}</span>
                         </span>
                       );
                     }}

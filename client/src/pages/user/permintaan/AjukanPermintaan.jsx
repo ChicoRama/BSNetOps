@@ -231,7 +231,7 @@ export default function AjukanPermintaan() {
                         required
                       >
                         <option value="" disabled hidden>Pilih Jabatan</option>
-                        <option value="Head User">Head Unit</option>
+                        <option value="Head User">Manager</option>
                         <option value="User">User</option>
                       </select>
                     </div>
@@ -319,6 +319,7 @@ export default function AjukanPermintaan() {
               </div>
             </form>
           ) : (
+            
             /* STEP 3: REVIEW & SUBMIT */
             <div>
               <div className="mb-6">
@@ -327,6 +328,8 @@ export default function AjukanPermintaan() {
                   <span className="font-medium">Nama Lengkap</span><span>: {formData.namaLengkap}</span>
                   <span className="font-medium">Unit</span><span>: {formData.divisi}</span>
                   <span className="font-medium">Prioritas & Tanggal</span><span>: {formData.prioritas} | {formData.tanggalDibutuhkan}</span>
+                  <span className="font-medium">Keterangan</span>
+                  <span className="italic text-gray-600">: {formData.alasanDibutuhkan || '-'}</span>
                 </div>
               </div>
               <hr className="border-gray-300 my-4" />

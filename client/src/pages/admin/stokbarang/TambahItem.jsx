@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Save, Upload, Image as ImageIcon } from 'lucide-react';
+import { supabase } from '../../../../supabaseClient';
 
 export default function TambahItem({ onClose }) {
   // Mengeset default input tanggal ke hari ini
