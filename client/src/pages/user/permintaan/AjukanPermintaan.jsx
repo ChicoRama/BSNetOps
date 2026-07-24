@@ -24,35 +24,54 @@ export default function AjukanPermintaan() {
 
   useEffect(() => {
     if (isMultiItem) {
-      // Saat barang masuk, kita jalankan fungsi pengecekan prioritas otomatis
       initializeItemsWithAutoPriority(savedAssets);
       localStorage.removeItem('selectedAssetData');
     }
 
-    const activeUser = JSON.parse(localStorage.getItem('userProfile'));
+    // Ambil data user yang sedang login dari localStorage
+    const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
     
     if (activeUser) {
+      const identifier = activeUser.email || activeUser.username || activeUser.namaLengkap;
+
+      // Isi sementara dari localStorage (nama & email dasar)
       setFormData(prev => ({
         ...prev,
-        namaLengkap: activeUser.namaLengkap || activeUser.name || '',
-        nipPegawai: activeUser.nipPegawai || activeUser.employeeId || '',
-        divisi: activeUser.divisi || activeUser.unit || '',
-        jabatan: activeUser.jabatan || '',
-        email: activeUser.email || '',
-        noTelepon: activeUser.noTelepon || activeUser.phone || ''
+        namaLengkap: activeUser.namaLengkap || activeUser.name || activeUser.username || '',
+        email: activeUser.email || ''
       }));
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        namaLengkap: 'Chico Diar Ramadhan',
-        nipPegawai: '21120124140150',
-        divisi: 'KCP Majapahit', 
-        jabatan: 'User',
-        email: 'chico.diar@example.com',
-        noTelepon: '085157778659'
-      }));
+
+      // 🔥 Sambung ke database Supabase tabel 'user_roles' untuk menarik data lengkap (NIP/staff_id, Unit/unit, Jabatan/role)
+      fetchUserProfileFromDB(identifier);
     }
   }, [isMultiItem]);
+
+  // Fungsi untuk mengambil data lengkap dari database Supabase (tabel user_roles)
+  const fetchUserProfileFromDB = async (identifier) => {
+    if (!identifier) return;
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('*')
+        .or(`email.eq.${identifier},username.eq.${identifier}`)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setFormData(prev => ({
+          ...prev,
+          namaLengkap: data.username || data.email?.split('@')[0] || prev.namaLengkap,
+          nipPegawai: data.staff_id || '', // Mengambil dari kolom staff_id
+          divisi: data.unit || '',            // Mengambil dari kolom unit
+          jabatan: data.role || 'User',       // Mengambil dari kolom role
+          email: data.email || prev.email,
+        }));
+      }
+    } catch (err) {
+      console.error("Gagal mengambil profil dari database:", err.message);
+    }
+  };
 
   // 🔥 FUNGSI OTOMATIS: Hitung frekuensi permintaan barang dalam 1 tahun terakhir
   const initializeItemsWithAutoPriority = async (assets) => {
@@ -63,7 +82,6 @@ export default function AjukanPermintaan() {
       const isoOneYearAgo = oneYearAgo.toISOString();
 
       const processedItems = await Promise.all(assets.map(async (asset) => {
-        // Hitung berapa kali nama_barang ini muncul di request dalam 1 tahun ke belakang
         const { count, error } = await supabase
           .from('request_items')
           .select('id, created_at', { count: 'exact', head: true })
@@ -75,7 +93,6 @@ export default function AjukanPermintaan() {
         const frequency = count || 0;
         let calculatedPriority = 'Rendah';
 
-        // Aturan Otomatis Berdasarkan Frekuensi Tahunan
         if (frequency > 5) {
           calculatedPriority = 'Tinggi';
         } else if (frequency >= 2) {
@@ -88,8 +105,8 @@ export default function AjukanPermintaan() {
           namaAset: asset.namaAset,
           kodeAset: asset.kodeAset,
           jumlah: asset.jumlah || 1,
-          prioritas: calculatedPriority, // Otomatis terisi oleh sistem!
-          autoFrequency: frequency,       // Info tambahan untuk transparansi
+          prioritas: calculatedPriority, 
+          autoFrequency: frequency,       
           keterangan: '' 
         };
       }));
@@ -97,7 +114,6 @@ export default function AjukanPermintaan() {
       setDaftarBarang(processedItems);
     } catch (err) {
       console.error("Gagal menghitung prioritas otomatis:", err.message);
-      // Fallback jika gagal query: set default Rendah
       const fallbackItems = assets.map(asset => ({
         namaAset: asset.namaAset,
         kodeAset: asset.kodeAset,
@@ -175,7 +191,7 @@ export default function AjukanPermintaan() {
         kode_barang: b.kodeAset,
         nama_barang: b.namaAset,
         jumlah_diminta: b.jumlah,
-        prioritas: b.prioritas, // Menyimpan prioritas otomatis sistem ke DB
+        prioritas: b.prioritas, 
         remark: b.keterangan 
       }));
 
@@ -339,7 +355,6 @@ export default function AjukanPermintaan() {
                             </div>
                             
                             <div className="flex items-center gap-3">
-                              {/* 🤖 LABEL OTOMATIS PRIORITAS (Sistem yang menentukan) */}
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs text-zinc-500 font-medium">Prioritas Sistem:</span>
                                 <span className={`px-2.5 py-1 rounded-md text-xs font-black border ${
