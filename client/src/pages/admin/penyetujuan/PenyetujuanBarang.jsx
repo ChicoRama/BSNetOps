@@ -1,34 +1,115 @@
 import html2pdf from 'html2pdf.js';
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, CheckSquare, X, Check, MoreVertical, Download } from 'lucide-react';
 import TemplateDokumenA4 from '../../user/permintaan/TemplateDokumenA4';
+import { supabase } from '../../../../supabaseClient'; 
 
 export default function PenyetujuanBarang() {
   const printRef = useRef();
   const [isExporting, setIsExporting] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const [requests, setRequests] = useState([
-    {
-      id: 'REQ-20260720-001',
-      pemohon: 'Chico Diar Ramadhan',
-      unit: 'KC Semarang',
-      tanggal: '2026-07-20',
-      prioritas: 'Tinggi',
-      status: 'Menunggu',
-      isDiserahkan: false, // Status penyerahan fisik oleh Agus
-      keteranganPemohon: 'Untuk kebutuhan tim lapangan',
-      items: [
-        { idItem: 'ITM-01', namaBarang: 'Kertas HVS A4', kodeBarang: 'ATK-A4-01', stokGudang: 10, jmlDiminta: 5, jmlDisetujui: 5, remark: '' },
-        { idItem: 'ITM-02', namaBarang: 'Tinta Printer Epson Black', kodeBarang: 'TIN-EP-01', stokGudang: 2, jmlDiminta: 3, jmlDisetujui: 2, remark: 'Stok tidak mencukupi, hanya bisa 2.' }
-      ]
-    }
-  ]);
-
+  const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showBonPreview, setShowBonPreview] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // 🔥 FETCH DATA DARI SUPABASE DAN SINKRONKAN STOK GUDANG REAL-TIME
+  useEffect(() => {
+    fetchRequestsFromSupabase();
+  }, []);
+
+const fetchRequestsFromSupabase = async () => {
+    setLoading(true);
+    try {
+      // 1. Ambil data requests beserta request_items
+      const { data, error } = await supabase
+        .from('requests')
+        .select(`
+          id,
+          nama_pemohon,
+          unit,
+          tanggal,
+          status,
+          is_diserahkan,
+          tanggal_diserahkan,
+          keperluan,
+          request_items (
+            id,
+            kode_barang,
+            nama_barang,
+            jumlah_diminta,
+            jumlah_disetujui,
+            remark
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        // 2. Ambil seluruh data dari tabel master 'items' sekaligus untuk dicocokkan di JavaScript (jauh lebih aman & akurat)
+        const { data: allMasterItems, error: masterError } = await supabase
+          .from('items')
+          .select('*');
+
+        if (masterError) {
+          console.error("Gagal mengambil master items:", masterError.message);
+        }
+
+        console.log("Master Items dari Database:", allMasterItems); // Cek konsol browser untuk melihat kolom tabel items kamu
+
+        const formattedData = data.map(req => {
+          const formattedItems = req.request_items.map(item => {
+            let latestStock = 0;
+
+            if (allMasterItems && allMasterItems.length > 0) {
+              // Cocokkan berdasarkan nama barang (diabaikan huruf besar/kecil) atau kode barang
+              const matchedItem = allMasterItems.find(m => 
+                (item.kode_barang && (m.id == item.kode_barang || m.kode_barang == item.kode_barang || m.kode_item == item.kode_barang)) ||
+                (item.nama_barang && m.name && m.name.trim().toLowerCase() === item.nama_barang.trim().toLowerCase())
+              );
+
+              if (matchedItem) {
+                // Ambil nilai stok dari kolom apa pun yang tersedia di tabel items ('stock', 'stok', atau 'jumlah')
+                latestStock = matchedItem.stock ?? matchedItem.stok ?? matchedItem.jumlah ?? 0;
+              }
+            }
+
+            return {
+              idItem: item.id,
+              namaBarang: item.nama_barang,
+              kodeBarang: item.kode_barang || '-',
+              stokGudang: latestStock, 
+              jmlDiminta: item.jumlah_diminta,
+              jmlDisetujui: item.jumlah_disetujui ?? item.jumlah_diminta,
+              remark: item.remark || ''
+            };
+          });
+
+          return {
+            id: req.id,
+            pemohon: req.nama_pemohon,
+            unit: req.unit,
+            tanggal: req.tanggal,
+            status: req.status,
+            isDiserahkan: req.is_diserahkan || false,
+            tanggalDiserahkan: req.tanggal_diserahkan || '',
+            keteranganPemohon: req.keperluan || '',
+            items: formattedItems
+          };
+        });
+
+        setRequests(formattedData);
+      }
+    } catch (error) {
+      console.error('Gagal mengambil data permintaan dari database:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredRequests = requests.filter(req =>
     req.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -59,38 +140,52 @@ export default function PenyetujuanBarang() {
     });
   };
 
-  // 🔥 FUNGSI SETUJUI & SERAHKAN FISIK OLEH ADMIN (AGUS)
-  const handleApproveAndHandover = () => {
+  // 🔥 FUNGSI SETUJUI & TERUSKAN KE MANAGER
+  const handleApproveAndHandover = async () => {
     const isExceedingStock = selectedRequest.items.some(item => item.jmlDisetujui > item.stokGudang);
     if (isExceedingStock) {
-      alert("Gagal: Ada barang yang jumlah disetujuinya melebihi stok gudang!");
+      alert("Gagal: Ada barang yang jumlah disetujuinya melebihi stok gudang saat ini!");
       return;
     }
 
     const todayStr = new Date().toLocaleDateString('id-ID');
 
-    setRequests((prev) => prev.map(req => 
-      req.id === selectedRequest.id 
-        ? { ...selectedRequest, status: 'Diserahkan', isDiserahkan: true, tanggalDiserahkan: todayStr } 
-        : req
-    ));
-    
-    alert(`Permintaan ${selectedRequest.id} berhasil disetujui dan diserahkan oleh Agus (Admin GA). Tanda tangan digital QR telah diterbitkan!`);
-    setIsModalOpen(false);
-    setSelectedRequest(null);
-  };
+    try {
+      // 1. Update status header di tabel 'requests' menjadi 'Menunggu Manager'
+      const { error: reqError } = await supabase
+        .from('requests')
+        .update({ 
+          status: 'Menunggu Manager', 
+          is_diserahkan: true, 
+          tanggal_diserahkan: todayStr 
+        })
+        .eq('id', selectedRequest.id);
 
-  const handleReject = () => {
-    if (window.confirm("Apakah Anda yakin ingin menolak permintaan ini?")) {
-      setRequests((prev) => prev.map(req => 
-        req.id === selectedRequest.id ? { ...selectedRequest, status: 'Ditolak' } : req
-      ));
+      if (reqError) throw reqError;
+
+      // 2. Update detail item (jumlah disetujui & remark) di tabel 'request_items'
+      for (const item of selectedRequest.items) {
+        await supabase
+          .from('request_items')
+          .update({
+            jumlah_disetujui: item.jmlDisetujui,
+            remark: item.remark
+          })
+          .eq('id', item.idItem);
+      }
+
+      alert(`Permintaan ${selectedRequest.id} berhasil disetujui Admin dan diteruskan ke Manager untuk ACC Final.`);
+      
       setIsModalOpen(false);
       setSelectedRequest(null);
+      fetchRequestsFromSupabase(); 
+
+    } catch (error) {
+      console.error('Gagal memperbarui status penyerahan:', error.message);
+      alert('Terjadi kesalahan saat menyimpan ke database.');
     }
   };
 
-  // Fungsi Download PDF Bon menggunakan html2pdf.js
   const handleDownloadPDF = () => {
     const element = printRef.current;
     if (!element) return;
@@ -114,7 +209,6 @@ export default function PenyetujuanBarang() {
     });
   };
 
-  // Mapping data untuk Bon Preview
   const mappedFormData = selectedRequest ? {
     divisi: selectedRequest.unit,
     alasanDibutuhkan: selectedRequest.keteranganPemohon,
@@ -123,7 +217,9 @@ export default function PenyetujuanBarang() {
 
   const mappedDaftarBarang = selectedRequest ? selectedRequest.items.map(item => ({
     namaAset: item.namaBarang,
-    jumlah: item.jmlDisetujui || item.jmlDiminta
+    jumlahDiminta: item.jmlDiminta,
+    jumlahDisetujui: item.jmlDisetujui,
+    remark: item.remark
   })) : [];
 
   const mappedAdminData = selectedRequest ? {
@@ -165,13 +261,14 @@ export default function PenyetujuanBarang() {
               <th className="p-4">Pemohon</th>
               <th className="p-4">Unit</th>
               <th className="p-4">Tgl Dibutuhkan</th>
-              <th className="p-4 text-center">Prioritas</th>
               <th className="p-4 text-center">Status</th>
               <th className="p-4 text-center">Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {filteredRequests.length === 0 ? (
+            {loading ? (
+              <tr><td colSpan="7" className="p-8 text-center text-zinc-400 text-sm">Memuat data dari database...</td></tr>
+            ) : filteredRequests.length === 0 ? (
               <tr><td colSpan="7" className="p-8 text-center text-zinc-500 text-sm">Tidak ada data permintaan ditemukan</td></tr>
             ) : (
               filteredRequests.map((req) => (
@@ -182,16 +279,8 @@ export default function PenyetujuanBarang() {
                   <td className="p-4 text-zinc-600">{req.tanggal}</td>
                   <td className="p-4 text-center">
                     <span className={`px-2.5 py-1.5 rounded-md text-[10px] uppercase font-bold tracking-wider border ${
-                      req.prioritas === 'Tinggi' ? 'bg-red-50 text-red-600 border-red-100' :
-                      req.prioritas === 'Sedang' ? 'bg-yellow-50 text-yellow-600 border-yellow-100' : 'bg-blue-50 text-blue-600 border-blue-100'
-                    }`}>
-                      {req.prioritas}
-                    </span>
-                  </td>
-                  <td className="p-4 text-center">
-                    <span className={`px-2.5 py-1.5 rounded-md text-[10px] uppercase font-bold tracking-wider border ${
-                      req.status === 'Menunggu' ? 'bg-orange-50 text-orange-600 border-orange-100' :
-                      req.status === 'Diserahkan' ? 'bg-green-50 text-green-600 border-green-100' : 
+                      req.status === 'menunggu' ? 'bg-orange-50 text-orange-600 border-orange-100' :
+                      req.status === 'Menunggu Manager' ? 'bg-blue-50 text-blue-600 border-blue-100' : 
                       req.status === 'Ditolak' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-gray-50 text-gray-600 border-gray-200'
                     }`}>
                       {req.status}
@@ -217,7 +306,6 @@ export default function PenyetujuanBarang() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
             
-            {/* Header Modal */}
             <div className="px-6 py-4 border-b border-zinc-200 flex justify-between items-center bg-white">
               <div>
                 <h2 className="text-lg font-bold text-gray-800">Proses Penyetujuan & Penyerahan Barang</h2>
@@ -228,12 +316,9 @@ export default function PenyetujuanBarang() {
               </button>
             </div>
 
-            {/* Body Modal */}
             <div className="p-6 overflow-y-auto flex-1 bg-zinc-50/50">
               
-              {/* DETAIL INFORMASI & TTD DIGITAL PEMOHON & ADMIN */}
               <div className="mb-6 bg-white p-5 rounded-xl border border-zinc-200 shadow-sm flex flex-col md:flex-row justify-between gap-6">
-                
                 <div className="flex-1">
                   <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-zinc-100 pb-2">Informasi Pemohon</h3>
                   <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-y-2 text-sm text-gray-700">
@@ -244,7 +329,6 @@ export default function PenyetujuanBarang() {
                   </div>
                 </div>
 
-                {/* QR Code Pemohon */}
                 <div className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-zinc-200 rounded-lg bg-zinc-50/50 min-w-[130px]">
                   <img 
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`Requested by ${selectedRequest.pemohon}`)}`} 
@@ -254,7 +338,6 @@ export default function PenyetujuanBarang() {
                   <span className="text-[10px] text-zinc-500 font-mono mt-1 font-bold">TTD Pemohon</span>
                 </div>
 
-                {/* QR Code Admin Agus (Jika sudah diserahkan) */}
                 <div className={`flex flex-col items-center justify-center p-3 border-2 border-dashed rounded-lg min-w-[130px] ${selectedRequest.isDiserahkan ? 'border-emerald-300 bg-emerald-50/50' : 'border-zinc-200 bg-zinc-100 opacity-60'}`}>
                   {selectedRequest.isDiserahkan ? (
                     <img 
@@ -267,17 +350,16 @@ export default function PenyetujuanBarang() {
                   )}
                   <span className="text-[10px] text-zinc-700 font-mono mt-1 font-bold">Agus (Admin GA)</span>
                 </div>
-
               </div>
 
-              <h3 className="font-bold text-gray-800 mb-3 text-sm">Penyesuaian Barang (Adjustment)</h3>
+              <h3 className="font-bold text-gray-800 mb-3 text-sm">Penyesuaian Barang (Adjustment & Cek Stok Real-Time)</h3>
               
               <div className="border border-zinc-200 rounded-xl overflow-hidden bg-white shadow-sm">
                 <table className="w-full text-left text-sm border-collapse">
                   <thead className="bg-[#58a27d] text-white text-xs uppercase font-semibold">
                     <tr>
                       <th className="p-3 w-1/4">Nama Barang</th>
-                      <th className="p-3 text-center">Stok</th>
+                      <th className="p-3 text-center">Stok Gudang</th>
                       <th className="p-3 text-center">Diminta</th>
                       <th className="p-3 w-32">Disetujui</th>
                       <th className="p-3 w-1/3">Catatan Admin</th>
@@ -291,6 +373,7 @@ export default function PenyetujuanBarang() {
                           <div className="text-[10px] text-zinc-500 font-mono mt-0.5">{item.kodeBarang}</div>
                         </td>
                         <td className="p-3 text-center">
+                          {/* 🔥 MENAMPILKAN STOK TERBARU LANGSUNG DARI DATABASE MASTER BARANG */}
                           <span className={`inline-flex items-center justify-center min-w-[32px] px-2 py-1 rounded-md text-xs font-bold border ${item.stokGudang > 0 ? 'bg-[#e7f0ec] text-[#00664b] border-[#00664b]/20' : 'bg-red-50 text-red-600 border-red-200'}`}>
                             {item.stokGudang}
                           </span>
@@ -322,15 +405,7 @@ export default function PenyetujuanBarang() {
               </div>
             </div>
 
-            {/* Footer Modal - Aksi */}
             <div className="px-6 py-4 border-t border-zinc-200 bg-white flex justify-between items-center rounded-b-2xl">
-              <button 
-                onClick={handleReject}
-                className="px-4 py-2 border border-red-200 text-red-600 bg-white hover:bg-red-50 font-semibold rounded-lg text-sm transition-colors cursor-pointer"
-              >
-                Tolak Permintaan
-              </button>
-
               <div className="flex space-x-3">
                 <button 
                   onClick={() => setShowBonPreview(true)}
@@ -342,7 +417,7 @@ export default function PenyetujuanBarang() {
                   onClick={handleApproveAndHandover}
                   className="px-5 py-2 bg-[#00664b] hover:bg-[#00553e] text-white font-semibold rounded-lg text-sm transition-colors shadow-md flex items-center justify-center cursor-pointer"
                 >
-                  Setujui & Serahkan Fisik
+                  Setujui & Teruskan ke Manager
                 </button>
               </div>
             </div>
@@ -356,12 +431,10 @@ export default function PenyetujuanBarang() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="bg-zinc-200 rounded-2xl shadow-2xl flex flex-col w-full max-w-4xl max-h-[95vh] overflow-hidden relative">
             
-            {/* Header Modal Preview dengan Tombol Titik Tiga */}
             <div className="px-6 py-4 bg-white border-b border-zinc-300 flex justify-between items-center z-20 shadow-sm">
               <h2 className="text-lg font-bold text-gray-800">Preview Bon Barang</h2>
               
               <div className="flex items-center gap-3">
-                {/* Dropdown Menu Titik Tiga */}
                 <div className="relative">
                   <button 
                     onClick={() => setIsMenuOpen(!isMenuOpen)}

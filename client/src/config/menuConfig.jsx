@@ -19,7 +19,7 @@ export const menuConfig = {
     { name: 'Kategori Barang', icon: <Boxes size={20}/> },
     { name: 'Penyetujuan Barang', icon: <Check size={20}/>},
     { name: 'Manajemen User', icon: <Users size={20}/> },
-    { name: 'Activity Log', icon: <ActivityIcon size={20}/> },
+    { name: 'Log Aktifitas', icon: <ActivityIcon size={20}/> },
   ],
   manager: [
     { name: 'Dashboard', icon: <LayoutDashboard size={20}/> },

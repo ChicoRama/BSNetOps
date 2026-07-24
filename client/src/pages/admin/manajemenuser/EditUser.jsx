@@ -1,17 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
 
-// Menambahkan onSave ke dalam parameter props
 export default function EditUser({ userData, onClose, onSave }) {
-  const [formData, setFormData] = useState({ id: '', name: '', email: '', role: '', status: '', isDeleted: false });
+  const [formData, setFormData] = useState({ 
+    id: '', 
+    originalId: '', 
+    name: '', 
+    email: '', 
+    role: 'Staff', 
+    unit: 'KC Semarang',
+    status: 'Aktif', 
+    isDeleted: false 
+  });
 
   useEffect(() => {
     if (userData) {
       setFormData({
         id: userData.id || '',
+        originalId: userData.originalId || '',
         name: userData.name || '',
         email: userData.email || '',
         role: userData.role || 'Staff',
+        unit: userData.unit || 'KC Semarang',
         status: userData.status || 'Aktif',
         isDeleted: userData.isDeleted || false 
       });
@@ -20,7 +30,7 @@ export default function EditUser({ userData, onClose, onSave }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Mengirimkan data yang sudah diedit kembali ke komponen induk
+    // Mengirimkan kembali seluruh data ke fungsi onSave di UserManagement.jsx
     onSave(formData);
   };
 
@@ -38,32 +48,52 @@ export default function EditUser({ userData, onClose, onSave }) {
           </button>
         </div>
 
-        {/* Menggunakan fungsi handleSubmit */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-semibold text-zinc-700 mb-1">Nama Lengkap</label>
-            <input type="text" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white" />
+            <input 
+              type="text" 
+              required 
+              value={formData.name} 
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
+              className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white" 
+            />
           </div>
 
           <div>
             <label className="block text-sm font-semibold text-zinc-700 mb-1">Email Resmi BSN</label>
-            <input type="email" required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white" />
+            <input 
+              type="email" 
+              required 
+              value={formData.email} 
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })} 
+              className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white" 
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-zinc-700 mb-1">Hak Akses</label>
-              <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer">
+              <select 
+                value={formData.role} 
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })} 
+                className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
+              >
                 <option value="Staff">Staff</option>
                 <option value="Admin">Admin</option>
+                <option value="Manager">Manager</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1">Status Akun</label>
-              {/* Value "Nonaktif" diubah jadi "Ditangguhkan" agar text di tabel selaras dengan pilihan */}
-              <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer">
-                <option value="Aktif">Aktif</option>
-                <option value="Ditangguhkan">Ditangguhkan</option>
+              <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit / Cabang</label>
+              <select 
+                value={formData.unit} 
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })} 
+                className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
+              >
+                <option value="KC Semarang">KC Semarang</option>
+                <option value="KCP Majapahit">KCP Majapahit</option>
+                <option value="KCP Ungaran">KCP Ungaran</option>
               </select>
             </div>
           </div>

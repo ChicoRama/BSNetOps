@@ -1,34 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import html2pdf from 'html2pdf.js';
 import TemplateDokumenA4 from './TemplateDokumenA4';
+import { supabase } from '../../../../supabaseClient'; 
 
 export default function AjukanPermintaan() {
   const printRef = useRef();
 
-  //  AMBIL DATA BANYAK BARANG DARI KERANJANG
   const savedAssets = JSON.parse(localStorage.getItem('selectedAssetData')) || [];
   const isMultiItem = Array.isArray(savedAssets) && savedAssets.length > 0;
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
+  const [isCheckingPriority, setIsCheckingPriority] = useState(false);
   
+  // State Form Utama
   const [formData, setFormData] = useState({
     namaLengkap: '', nipPegawai: '', divisi: '', jabatan: '', email: '', noTelepon: '',
-    tanggalDibutuhkan: '', 
-    prioritas: '', 
-    alasanDibutuhkan: ''
+    tanggalDibutuhkan: '', keperluan: ''
   });
 
+  // State Detail Barang (Items)
   const [daftarBarang, setDaftarBarang] = useState([]);
 
   useEffect(() => {
     if (isMultiItem) {
-      const items = savedAssets.map(asset => ({
-        namaAset: asset.namaAset,
-        kodeAset: asset.kodeAset,
-        jumlah: asset.jumlah || 1
-      }));
-      setDaftarBarang(items);
+      // Saat barang masuk, kita jalankan fungsi pengecekan prioritas otomatis
+      initializeItemsWithAutoPriority(savedAssets);
       localStorage.removeItem('selectedAssetData');
     }
 
@@ -38,8 +35,8 @@ export default function AjukanPermintaan() {
       setFormData(prev => ({
         ...prev,
         namaLengkap: activeUser.namaLengkap || activeUser.name || '',
-        nipPegawai: activeUser.nipPegawai || activeUser.nip || '',
-        divisi: activeUser.divisi || '',
+        nipPegawai: activeUser.nipPegawai || activeUser.employeeId || '',
+        divisi: activeUser.divisi || activeUser.unit || '',
         jabatan: activeUser.jabatan || '',
         email: activeUser.email || '',
         noTelepon: activeUser.noTelepon || activeUser.phone || ''
@@ -49,29 +46,85 @@ export default function AjukanPermintaan() {
         ...prev,
         namaLengkap: 'Chico Diar Ramadhan',
         nipPegawai: '21120124140150',
-        divisi: 'KC Semarang', 
-        jabatan: 'User', 
+        divisi: 'KCP Majapahit', 
+        jabatan: 'User',
         email: 'chico.diar@example.com',
         noTelepon: '085157778659'
       }));
     }
-  }, []);
+  }, [isMultiItem]);
+
+  // 🔥 FUNGSI OTOMATIS: Hitung frekuensi permintaan barang dalam 1 tahun terakhir
+  const initializeItemsWithAutoPriority = async (assets) => {
+    setIsCheckingPriority(true);
+    try {
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      const isoOneYearAgo = oneYearAgo.toISOString();
+
+      const processedItems = await Promise.all(assets.map(async (asset) => {
+        // Hitung berapa kali nama_barang ini muncul di request dalam 1 tahun ke belakang
+        const { count, error } = await supabase
+          .from('request_items')
+          .select('id, created_at', { count: 'exact', head: true })
+          .ilike('nama_barang', asset.namaAset)
+          .gte('created_at', isoOneYearAgo);
+
+        if (error) throw error;
+
+        const frequency = count || 0;
+        let calculatedPriority = 'Rendah';
+
+        // Aturan Otomatis Berdasarkan Frekuensi Tahunan
+        if (frequency > 5) {
+          calculatedPriority = 'Tinggi';
+        } else if (frequency >= 2) {
+          calculatedPriority = 'Sedang';
+        } else {
+          calculatedPriority = 'Rendah';
+        }
+
+        return {
+          namaAset: asset.namaAset,
+          kodeAset: asset.kodeAset,
+          jumlah: asset.jumlah || 1,
+          prioritas: calculatedPriority, // Otomatis terisi oleh sistem!
+          autoFrequency: frequency,       // Info tambahan untuk transparansi
+          keterangan: '' 
+        };
+      }));
+
+      setDaftarBarang(processedItems);
+    } catch (err) {
+      console.error("Gagal menghitung prioritas otomatis:", err.message);
+      // Fallback jika gagal query: set default Rendah
+      const fallbackItems = assets.map(asset => ({
+        namaAset: asset.namaAset,
+        kodeAset: asset.kodeAset,
+        jumlah: asset.jumlah || 1,
+        prioritas: 'Rendah',
+        keterangan: ''
+      }));
+      setDaftarBarang(fallbackItems);
+    } finally {
+      setIsCheckingPriority(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name === "alasanDibutuhkan") {
-      const kata = value.trim().split(/\s+/);
-      if (kata.length > 40) {
-        alert("Batas maksimum pengisian keterangan adalah 40 kata agar muat dalam format cetak!");
-        return;
-      }
-    }
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleQtyChange = (index, val) => {
     const updated = [...daftarBarang];
     updated[index].jumlah = parseInt(val) || 1;
+    setDaftarBarang(updated);
+  };
+
+  const handleKeteranganItemChange = (index, val) => {
+    const updated = [...daftarBarang];
+    updated[index].keterangan = val;
     setDaftarBarang(updated);
   };
 
@@ -92,9 +145,54 @@ export default function AjukanPermintaan() {
     else if (currentStep === 3) setCurrentStep(2);
   };
 
-  const handleSubmitFinal = () => {
-    console.log("Data Sent to Backend:", { ...formData, barang: daftarBarang });
-    setCurrentStep(4);
+  const handleSubmitFinal = async () => {
+    setIsExporting(true); 
+
+    try {
+      const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const randomCode = Math.floor(100 + Math.random() * 900);
+      const generatedId = `REQ-${dateCode}-${randomCode}`;
+
+      const { error: reqError } = await supabase
+        .from('requests')
+        .insert([
+          {
+            id: generatedId,
+            nama_pemohon: formData.namaLengkap,
+            unit: formData.divisi,
+            tanggal: formData.tanggalDibutuhkan,
+            jam: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+            status: 'menunggu',
+            keperluan: formData.keperluan || 'Detail per barang',
+            is_diserahkan: false
+          }
+        ]);
+
+      if (reqError) throw reqError;
+
+      const itemsToInsert = daftarBarang.map(b => ({
+        request_id: generatedId, 
+        kode_barang: b.kodeAset,
+        nama_barang: b.namaAset,
+        jumlah_diminta: b.jumlah,
+        prioritas: b.prioritas, // Menyimpan prioritas otomatis sistem ke DB
+        remark: b.keterangan 
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('request_items')
+        .insert(itemsToInsert);
+
+      if (itemsError) throw itemsError;
+
+      setCurrentStep(4);
+
+    } catch (err) {
+      console.error("Error Database:", err);
+      alert(`Gagal menyimpan data ke database: ${err.message}`);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleDownloadPDF = () => {
@@ -106,20 +204,7 @@ export default function AjukanPermintaan() {
       margin:       0,
       filename:     `Bon_Barang_${formData.namaLengkap ? formData.namaLengkap.replace(/\s+/g, '_') : 'BSN'}.pdf`,
       image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { 
-        scale: 2, 
-        useCORS: true,
-        logging: false,
-        onclone: (clonedDoc) => {
-          const allElements = clonedDoc.querySelectorAll('*');
-          allElements.forEach((el) => {
-            const style = window.getComputedStyle(el);
-            if (style.color && style.color.includes('oklch')) el.style.color = '#000000';
-            if (style.backgroundColor && style.backgroundColor.includes('oklch')) el.style.backgroundColor = '#ffffff';
-            if (style.borderColor && style.borderColor.includes('oklch')) el.style.borderColor = '#000000';
-          });
-        }
-      },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
     };
 
@@ -131,7 +216,6 @@ export default function AjukanPermintaan() {
     });
   };
 
-  // FUNGSI BARU: Mendapatkan tanggal hari ini (Format YYYY-MM-DD)
   const getTodayDate = () => {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -143,11 +227,10 @@ export default function AjukanPermintaan() {
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col items-center">
       
-      {/* HEADER WIZARD */}
       {currentStep <= 3 && (
         <div className="w-full max-w-2xl mb-6 text-white print:hidden">
           <h1 className="text-2xl font-bold">Ajukan Permintaan</h1>
-          <p className="text-sm opacity-90">Isi formulir untuk mengajukan permintaan aset kantor</p>
+          <p className="text-sm opacity-90">Sistem otomatis menghitung tingkat prioritas berdasarkan frekuensi permintaan tahunan</p>
           
           <div className="flex items-center space-x-4 mt-4 text-xs">
             <div className={`flex items-center space-x-1 ${currentStep === 1 ? 'font-semibold' : 'opacity-60'}`}>
@@ -157,7 +240,7 @@ export default function AjukanPermintaan() {
             <div className="h-[1px] w-12 bg-white opacity-50"></div>
             <div className={`flex items-center space-x-1 ${currentStep === 2 ? 'font-semibold' : 'opacity-60'}`}>
               <span className={`rounded-full w-5 h-5 flex items-center justify-center font-bold ${currentStep === 2 ? 'bg-white text-[#4d8c6b]' : 'border border-white'}`}>2</span>
-              <span>Detail Barang & Kebutuhan</span>
+              <span>Detail Kebutuhan</span>
             </div>
             <div className="h-[1px] w-12 bg-white opacity-50"></div>
             <div className={`flex items-center space-x-1 ${currentStep === 3 ? 'font-semibold' : 'opacity-60'}`}>
@@ -185,30 +268,25 @@ export default function AjukanPermintaan() {
         </div>
       )}
 
-      {/* AREA CARD UTAMA FORMULIR */}
       {currentStep <= 3 ? (
         <div className="bg-white w-full max-w-2xl rounded-2xl shadow-lg p-8 text-black">
           {currentStep <= 2 ? (
             <form onSubmit={handleNext}>
-              {/* STEP 1: INFORMASI PEMOHON */}
               {currentStep === 1 && (
                 <>
                   <h2 className="text-xl font-bold mb-6">Informasi Pemohon</h2>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label><input type="text" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">NIP/ ID pegawai</label><input type="text" name="nipPegawai" value={formData.nipPegawai} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required /></div>
-                    
-                    {/* Dropdown Unit */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                      <input type="text" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">NIP/ ID pegawai</label>
+                      <input type="text" name="nipPegawai" value={formData.nipPegawai} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required />
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                      <select 
-                        name="divisi" 
-                        value={formData.divisi} 
-                        onChange={handleChange} 
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" 
-                        required
-                      >
+                      <select name="divisi" value={formData.divisi} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" required>
                         <option value="" disabled hidden>Pilih Unit</option>
                         <option value="KC Semarang">KC Semarang</option>
                         <option value="KCP Majapahit">KCP Majapahit</option>
@@ -219,23 +297,14 @@ export default function AjukanPermintaan() {
                         <option value="KCP Magelang">KCP Magelang</option>
                       </select>
                     </div>
-                    
-                    {/* PERUBAHAN: Input teks "Jabatan" diganti menjadi Dropdown Select */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
-                      <select 
-                        name="jabatan" 
-                        value={formData.jabatan} 
-                        onChange={handleChange} 
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" 
-                        required
-                      >
+                      <select name="jabatan" value={formData.jabatan} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" required>
                         <option value="" disabled hidden>Pilih Jabatan</option>
-                        <option value="Head User">Manager</option>
+                        <option value="Head Unit">Head Unit</option>
                         <option value="User">User</option>
                       </select>
                     </div>
-
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required /></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">No Telephone</label><input type="tel" name="noTelepon" value={formData.noTelepon} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required /></div>
                   </div>
@@ -243,117 +312,138 @@ export default function AjukanPermintaan() {
                 </>
               )}
 
-              {/* STEP 2: DETAIL PERMINTAAN */}
               {currentStep === 2 && (
                 <>
-                  <h2 className="text-xl font-bold mb-4">Daftar Barang yang Diminta</h2>
-                  <span className="text-gray-400 text-sm select-none">
-                        Silakan pilih barang melalui menu Aset terlebih dahulu...
-                  </span>
-                  <div className="border border-zinc-200 rounded-xl p-4 bg-zinc-50/50 space-y-3 mb-6 max-h-[220px] overflow-y-auto">
-                    {daftarBarang.map((barang, idx) => (
-                      <div key={barang.kodeAset} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-white border border-zinc-200 rounded-lg shadow-sm">
-                        <div>
-                          <div className="text-xs font-bold capitalize text-zinc-800">{barang.namaAset}</div>
-                          <div className="text-[10px] text-zinc-500 font-mono mt-0.5">{barang.kodeAset}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <label className="text-[11px] text-zinc-600 font-medium">Jumlah:</label>
-                          <input 
-                            type="number" 
-                            min="1" 
-                            value={barang.jumlah} 
-                            onChange={(e) => handleQtyChange(idx, e.target.value)} 
-                            className="w-16 text-center text-xs border border-zinc-300 rounded py-1 px-1.5 focus:outline-[#4d8c6b]"
-                            required
-                          />
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <h2 className="text-xl font-bold">Detail Daftar Barang</h2>
+                    <div className="w-full sm:w-auto">
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Tanggal Dibutuhkan</label>
+                      <input type="date" name="tanggalDibutuhkan" value={formData.tanggalDibutuhkan} onChange={handleChange} min={getTodayDate()} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] text-sm" required />
+                    </div>
                   </div>
+                  
+                  {isCheckingPriority ? (
+                    <div className="py-12 text-center text-zinc-400 text-xs animate-pulse">
+                      ⚡ Menganalisis riwayat frekuensi permintaan barang tahunan...
+                    </div>
+                  ) : (
+                    <div className="border border-zinc-200 rounded-xl p-4 bg-zinc-50/50 space-y-4 mb-6 max-h-[350px] overflow-y-auto">
+                      {daftarBarang.map((barang, idx) => (
+                        <div key={barang.kodeAset} className="flex flex-col gap-3 p-3 bg-white border border-zinc-200 rounded-lg shadow-sm">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2">
+                            <div>
+                              <div className="text-sm font-bold capitalize text-zinc-800">{barang.namaAset}</div>
+                              <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                                ID: {barang.kodeAset} • <span className="text-emerald-700 font-semibold">Frekuensi 1 Tahun: {barang.autoFrequency}x req</span>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-3">
+                              {/* 🤖 LABEL OTOMATIS PRIORITAS (Sistem yang menentukan) */}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs text-zinc-500 font-medium">Prioritas Sistem:</span>
+                                <span className={`px-2.5 py-1 rounded-md text-xs font-black border ${
+                                  barang.prioritas === 'Tinggi' ? 'bg-red-50 text-red-600 border-red-200' : 
+                                  barang.prioritas === 'Sedang' ? 'bg-yellow-50 text-yellow-600 border-yellow-200' : 
+                                  'bg-gray-100 text-gray-600 border-gray-200'
+                                }`}>
+                                  {barang.prioritas}
+                                </span>
+                              </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Prioritas</label>
-                      <select name="prioritas" value={formData.prioritas} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white cursor-pointer" required>
-                        <option value="" disabled hidden>Pilih Prioritas</option>
-                        <option value="Rendah">Rendah (🔵)</option>
-                        <option value="Sedang">Sedang (🟡)</option>
-                        <option value="Tinggi">Tinggi (🔴)</option>
-                      </select>
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs text-zinc-600 font-medium">Jumlah:</label>
+                                <input 
+                                  type="number" 
+                                  min="1" 
+                                  value={barang.jumlah} 
+                                  onChange={(e) => handleQtyChange(idx, e.target.value)} 
+                                  className="w-16 text-center text-xs border border-zinc-300 rounded py-1 px-1.5 focus:outline-[#4d8c6b]"
+                                  required
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="w-full">
+                            <label className="block text-[10px] font-bold text-gray-500 mb-1">Alasan Permintaan Barang Ini:</label>
+                            <input 
+                              type="text" 
+                              placeholder="Contoh: Stok alat tulis habis..." 
+                              value={barang.keterangan || ''}
+                              onChange={(e) => handleKeteranganItemChange(idx, e.target.value)}
+                              className="w-full text-xs border border-gray-300 rounded bg-gray-50 py-1.5 px-3 focus:outline-none focus:ring-1 focus:ring-[#4d8c6b]"
+                              required
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Dibutuhkan</label>
-                      <input 
-                        type="date" 
-                        name="tanggalDibutuhkan" 
-                        value={formData.tanggalDibutuhkan} 
-                        onChange={handleChange} 
-                        min={getTodayDate()} 
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg" 
-                        required 
-                      />
-                    </div>
-                    
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Keterangan <span className="text-gray-400 text-xs font-normal">(Opsional)</span>
-                      </label>
-                      <textarea 
-                        name="alasanDibutuhkan" 
-                        value={formData.alasanDibutuhkan} 
-                        onChange={handleChange} 
-                        rows="3" 
-                        placeholder="Tambahkan keterangan jika ada..." 
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg resize-none" 
-                      ></textarea>
-                    </div>
-                  </div>
+                  )}
+
                   <div className="text-center text-xs text-gray-500 mt-8">2/3</div>
                 </>
               )}
 
               <div className="flex justify-end space-x-4 mt-6">
                 <button type="button" onClick={handleBack} className="px-6 py-2 border border-red-500 text-red-500 rounded-lg text-sm font-medium">{currentStep === 2 ? 'Kembali' : 'Batal'}</button>
-                <button type="submit" className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-medium">Selanjutnya</button>
+                <button type="submit" disabled={isCheckingPriority} className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50">Selanjutnya</button>
               </div>
             </form>
           ) : (
-            
-            /* STEP 3: REVIEW & SUBMIT */
             <div>
               <div className="mb-6">
-                <h2 className="text-lg font-bold mb-4">Informasi Pemohon</h2>
+                <h2 className="text-lg font-bold mb-4">Review Permintaan</h2>
                 <div className="grid grid-cols-[180px_minmax(0,1fr)] gap-y-2 text-sm">
-                  <span className="font-medium">Nama Lengkap</span><span>: {formData.namaLengkap}</span>
-                  <span className="font-medium">Unit</span><span>: {formData.divisi}</span>
-                  <span className="font-medium">Prioritas & Tanggal</span><span>: {formData.prioritas} | {formData.tanggalDibutuhkan}</span>
-                  <span className="font-medium">Keterangan</span>
-                  <span className="italic text-gray-600">: {formData.alasanDibutuhkan || '-'}</span>
+                  <span className="font-medium text-zinc-500">Nama Lengkap</span><span className="font-bold">: {formData.namaLengkap}</span>
+                  <span className="font-medium text-zinc-500">Unit</span><span>: {formData.divisi}</span>
+                  <span className="font-medium text-zinc-500">Tanggal Dibutuhkan</span><span>: {formData.tanggalDibutuhkan}</span>
                 </div>
               </div>
               <hr className="border-gray-300 my-4" />
               <div className="mb-6">
-                <h2 className="text-lg font-bold mb-3">Daftar Aset Berjumlah ({daftarBarang.length})</h2>
+                <h2 className="text-lg font-bold mb-3">Rincian Per Barang ({daftarBarang.length})</h2>
                 <div className="border border-zinc-200 rounded-xl overflow-hidden text-xs">
-                  <div className="bg-zinc-100 font-bold p-2.5 grid grid-cols-[1fr_100px]"><span>Nama Barang</span><span>Kuantitas</span></div>
+                  <div className="bg-zinc-100 font-bold p-2.5 grid grid-cols-[1fr_100px]"><span>Nama Barang & Keterangan</span><span>Kuantitas</span></div>
                   {daftarBarang.map((b) => (
-                    <div key={b.kodeAset} className="border-t border-zinc-200 p-2.5 grid grid-cols-[1fr_100px] capitalize">
-                      <span>{b.namaAset} ({b.kodeAset})</span>
-                      <span className="font-bold">{b.jumlah} Item</span>
+                    <div key={b.kodeAset} className="border-t border-zinc-200 p-3 flex justify-between items-start capitalize">
+                      <div>
+                        <span className="block font-bold text-sm text-zinc-800">{b.namaAset}</span>
+                        <span className="text-[10px] text-zinc-400 font-mono block mb-1">ID: {b.kodeAset}</span>
+                        <div className="text-[10px] text-gray-600 mt-1.5 flex flex-col gap-0.5">
+                          <span>
+                            <span className="font-bold text-gray-500">Prioritas (Otomatis Sistem):</span>{' '}
+                            <span className={`font-bold ${
+                              b.prioritas === 'Tinggi' ? 'text-red-600' : 
+                              b.prioritas === 'Sedang' ? 'text-yellow-600' : 
+                              'text-gray-600'
+                            }`}>
+                              {b.prioritas} (Frekuensi: {b.autoFrequency}x/tahun)
+                            </span>
+                          </span>
+                          <span><span className="font-bold text-gray-500">Alasan:</span> <span className="italic">{b.keterangan || '-'}</span></span>
+                        </div>
+                      </div>
+                      <span className="font-black text-sm text-[#00664b] whitespace-nowrap mt-1">{b.jumlah} Item</span>
                     </div>
                   ))}
                 </div>
               </div>
               <div className="flex justify-end space-x-4 mt-8">
-                <button type="button" onClick={handleBack} className="px-6 py-2 border border-gray-400 text-gray-700 rounded-lg text-sm font-medium">Ubah</button>
-                <button type="button" onClick={handleSubmitFinal} className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-medium">Ajukan Permintaan</button>
+                <button type="button" onClick={handleBack} className="px-6 py-2 border border-gray-400 text-gray-700 rounded-lg text-sm font-medium cursor-pointer">Ubah</button>
+                <button 
+                  type="button" 
+                  onClick={handleSubmitFinal} 
+                  disabled={isExporting}
+                  className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50"
+                >
+                  {isExporting ? 'Memproses ke Database...' : 'Ajukan Permintaan Sekarang'}
+                </button>
               </div>
             </div>
           )}
         </div>
       ) : (
-        /* STEP 4: PREVIEW DOKUMEN */
         <div className="shadow-2xl print:shadow-none bg-white rounded-lg overflow-hidden">
           <TemplateDokumenA4 ref={printRef} formData={formData} daftarBarang={daftarBarang} />
         </div>

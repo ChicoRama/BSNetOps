@@ -61,7 +61,25 @@ export default function LoginPage() {
       return;
     }
 
-    // 2. CEK ROLE USER DI TABEL 'user_roles'
+    // 2. SIMPAN TOKEN & PROFIL KE LOCALSTORAGE
+    if (data.session) {
+      // Simpan Token
+      localStorage.setItem("token", data.session.access_token);
+      localStorage.setItem("access_token", data.session.access_token);
+
+      // Simpan Profil Dasar
+      const profileInfo = {
+        email: inputEmail,
+        namaLengkap: data.user?.user_metadata?.full_name || inputEmail.split('@')[0],
+        nipPegawai: "",
+        divisi: "",
+        jabatan: "",
+        noTelepon: ""
+      };
+      localStorage.setItem("userProfile", JSON.stringify(profileInfo));
+    }
+
+    // 3. CEK ROLE USER DI TABEL 'user_roles'
     const { data: roleData, error: roleError } = await supabase
       .from('user_roles')
       .select('role')
@@ -77,7 +95,7 @@ export default function LoginPage() {
     console.log("Data role dari tabel:", roleData);
     console.log("Role yang dipakai untuk redirect:", userRole);
 
-    // 3. REDIRECT BERDASARKAN ROLE
+    // 4. REDIRECT BERDASARKAN ROLE
     if (userRole === "admin") {
       navigate("/admin");
     } else if (userRole === "manager") {

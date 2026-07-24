@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Filter, Calendar, Package, X, Check, ShoppingCart } from 'lucide-react';
+import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient Anda
 
-// REVISI: Menerima setCurrentView dari props App.jsx
 export default function Aset({ setCurrentView }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAsset, setSelectedAsset] = useState(null);
+  const [katalogAset, setKatalogAset] = useState([]);
+  const [loading, setLoading] = useState(true);
   
   // STATE KERANJANG (MULTI-ITEMS)
   const [cart, setCart] = useState(() => {
@@ -27,6 +29,41 @@ export default function Aset({ setCurrentView }) {
   
   const filterMenuRef = useRef(null);
 
+  // FETCH DATA DARI SUPABASE
+  useEffect(() => {
+    fetchItemsFromSupabase();
+  }, []);
+
+  const fetchItemsFromSupabase = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('items')
+        .select('*')
+        .is('deleted_at', null);
+
+      if (error) throw error;
+
+      if (data) {
+        // Mapping data dari Supabase agar sesuai dengan struktur UI katalog
+        const formattedItems = data.map(item => ({
+          id: item.id,
+          nama: item.name,
+          kode: item.id,
+          kategori: item.category || 'Umum',
+          stok: `${item.stock || 0} Unit`,
+          tglUpdate: item.date || 'Hari ini',
+          gambar: item.image || 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?q=80&w=400&auto=format&fit=crop'
+        }));
+        setKatalogAset(formattedItems);
+      }
+    } catch (error) {
+      console.error('Gagal mengambil data aset:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Auto close dropdown saat klik di luar
   useEffect(() => {
     function handleClickOutside(event) {
@@ -42,37 +79,6 @@ export default function Aset({ setCurrentView }) {
   useEffect(() => {
     localStorage.setItem('selectedAssetData', JSON.stringify(cart));
   }, [cart]);
-
-  // Data Dummy Katalog Aset
-  const katalogAset = [
-    { 
-      id: 1, 
-      nama: 'kertas hvs a4', 
-      kode: 'B501', 
-      kategori: 'ATK',
-      stok: '30 Box', 
-      tglUpdate: '1 juli 2026',
-      gambar: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQrgzTKV1WSHGEP44GQCR1AE5UpfIgY43Fw_kvJeRCnyg&s=10'
-    },
-    { 
-      id: 2, 
-      nama: 'ballpoint hitam gell', 
-      kode: 'B502', 
-      kategori: 'ATK',
-      stok: '120 Pcs', 
-      tglUpdate: '2 juli 2026',
-      gambar: 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?q=80&w=400&auto=format&fit=crop'
-    },
-    { 
-      id: 3, 
-      nama: 'proyektor epsom', 
-      kode: 'E101', 
-      kategori: 'Elektronik',
-      stok: '5 Unit', 
-      tglUpdate: '3 juli 2026',
-      gambar: 'https://images.unsplash.com/photo-1535016120720-40c646be5580?q=80&w=400&auto=format&fit=crop'
-    }
-  ];
 
   // LOGIKA FILTERING
   const filteredAset = katalogAset.filter(aset => {
@@ -112,7 +118,7 @@ export default function Aset({ setCurrentView }) {
     setCart(updatedCart);
   };
 
-  // REVISI: Mengalihkan view dashboard internal ke halaman form permintaan bawa data multi-items
+  // Mengalihkan view dashboard internal ke halaman form permintaan bawa data multi-items
   const handleRedirectToForm = () => {
     if (cart.length > 0) {
       setCurrentView('ajukan-permintaan');
@@ -202,7 +208,7 @@ export default function Aset({ setCurrentView }) {
 
               <div className="space-y-0.5">
                 <div className="px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                Kategori
+                  Kategori
                 </div>
                 
                 {['ATK', 'Elektronik'].map((kat) => (
@@ -230,53 +236,63 @@ export default function Aset({ setCurrentView }) {
       </div>
 
       {/* AREA GRID KATALOG */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
-        {filteredAset.map((aset) => {
-          const isAddedInCart = cart.some(item => item.kodeAset === aset.kode);
-          return (
-            <div 
-              key={aset.id}
-              onClick={() => handleOpenModal(aset)}
-              className={`bg-white border rounded-3xl p-4 flex gap-4 cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-[1.01] select-none relative overflow-hidden ${
-                isAddedInCart ? 'border-emerald-500 ring-1 ring-emerald-500/20' : 'border-zinc-200/80'
-              }`}
-            >
-              {isAddedInCart && (
-                <div className="absolute top-0 right-0 bg-emerald-500 text-white pl-3 pr-2 py-1 rounded-bl-xl text-[9px] font-bold flex items-center gap-1 shadow-sm">
-                  <Check size={10} strokeWidth={3} /> DIPILIH
+      {loading ? (
+        <div className="p-12 text-center text-xs text-zinc-400 bg-white rounded-3xl border border-zinc-200 shadow-sm">
+          Memuat katalog aset dari database...
+        </div>
+      ) : filteredAset.length === 0 ? (
+        <div className="p-12 text-center text-xs text-zinc-400 bg-white rounded-3xl border border-zinc-200 shadow-sm">
+          Tidak ada aset yang ditemukan.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+          {filteredAset.map((aset) => {
+            const isAddedInCart = cart.some(item => item.kodeAset === aset.kode);
+            return (
+              <div 
+                key={aset.id}
+                onClick={() => handleOpenModal(aset)}
+                className={`bg-white border rounded-3xl p-4 flex gap-4 cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-[1.01] select-none relative overflow-hidden ${
+                  isAddedInCart ? 'border-emerald-500 ring-1 ring-emerald-500/20' : 'border-zinc-200/80'
+                }`}
+              >
+                {isAddedInCart && (
+                  <div className="absolute top-0 right-0 bg-emerald-500 text-white pl-3 pr-2 py-1 rounded-bl-xl text-[9px] font-bold flex items-center gap-1 shadow-sm">
+                    <Check size={10} strokeWidth={3} /> DIPILIH
+                  </div>
+                )}
+
+                <div className="w-28 h-28 rounded-2xl bg-zinc-50 border border-zinc-100 flex items-center justify-center p-2 shrink-0 overflow-hidden">
+                  <img src={aset.gambar} alt={aset.nama} className="w-full h-full object-contain mix-blend-multiply" />
                 </div>
-              )}
 
-              <div className="w-28 h-28 rounded-2xl bg-zinc-50 border border-zinc-100 flex items-center justify-center p-2 shrink-0 overflow-hidden">
-                <img src={aset.gambar} alt={aset.nama} className="w-full h-full object-contain mix-blend-multiply" />
-              </div>
-
-              <div className="flex flex-col justify-between flex-1 py-1">
-                <div>
-                  <h3 className="font-bold text-sm capitalize text-zinc-700 border-b border-zinc-900 pb-1 tracking-tight pr-14">
-                    {aset.nama}
-                  </h3>
-                  <div className="mt-2.5 space-y-1.5 text-[11px] font-bold text-zinc-700">
-                    <div className="flex items-center gap-2.5">
-                      <Calendar size={13} className="text-zinc-500" />
-                      <span className="text-zinc-400 font-normal">|</span>
-                      <span>{aset.tglUpdate}</span>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <Package size={13} className="text-zinc-500" />
-                      <span className="text-zinc-400 font-normal">|</span>
-                      <span>{aset.stok}</span>
+                <div className="flex flex-col justify-between flex-1 py-1">
+                  <div>
+                    <h3 className="font-bold text-sm capitalize text-zinc-700 border-b border-zinc-900 pb-1 tracking-tight pr-14">
+                      {aset.nama}
+                    </h3>
+                    <div className="mt-2.5 space-y-1.5 text-[11px] font-bold text-zinc-700">
+                      <div className="flex items-center gap-2.5">
+                        <Calendar size={13} className="text-zinc-500" />
+                        <span className="text-zinc-400 font-normal">|</span>
+                        <span>{aset.tglUpdate}</span>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <Package size={13} className="text-zinc-500" />
+                        <span className="text-zinc-400 font-normal">|</span>
+                        <span>{aset.stok}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="inline-block self-start text-[11px] font-bold px-3 py-0.5 border border-emerald-600/40 text-[#00664b] bg-emerald-50/30 rounded-full mt-2">
-                  {aset.kode}
+                  <div className="inline-block self-start text-[11px] font-bold px-3 py-0.5 border border-emerald-600/40 text-[#00664b] bg-emerald-50/30 rounded-full mt-2">
+                    {aset.kode}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* MODAL DETAIL POP-UP */}
       {selectedAsset && (

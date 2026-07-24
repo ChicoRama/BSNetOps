@@ -1,16 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, Search, Filter, Shield, UserCheck, RotateCcw, XCircle, ArrowLeft } from 'lucide-react';
 import TambahUser from './TambahUser';
 import EditUser from './EditUser';
-
-const initialUsersData = [
-  { id: 'USR-001', name: 'Chico Diar Ramadhan', email: 'chico.diar@bsn.go.id', role: 'Admin', status: 'Aktif', isDeleted: false },
-  { id: 'USR-003', name: 'Ahmad Subarjo', email: 'ahmad.subarjo@bsn.go.id', role: 'Staff', status: 'Aktif', isDeleted: false },
-  { id: 'USR-004', name: 'Siti Rahmawati', email: 'siti.rahma@bsn.go.id', role: 'Admin', status: 'Aktif', isDeleted: false },
-];
+import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient Anda
 
 export default function UserManagement() {
-  const [users, setUsers] = useState(initialUsersData);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -19,36 +15,131 @@ export default function UserManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('Semua');
 
+  // 🔥 FETCH DATA DARI TABEL `user_roles` SUPABASE SAAT KOMPONEN DIMUAT
+  useEffect(() => {
+    fetchUsersFromSupabase();
+  }, []);
+
+  const fetchUsersFromSupabase = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        // Mapping data dari Supabase ke format state komponen
+        const formattedData = data.map(u => ({
+          id: u.staff_id || u.id,
+          originalId: u.id, // Primary Key UUID asli untuk query Supabase (.eq('id', ...))
+          name: u.username || 'Tanpa Nama',
+          email: u.email,
+          role: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Staff',
+          status: 'Aktif', // Bisa disesuaikan jika ada kolom status di database
+          isDeleted: u.deleted_at ? true : false,
+          deleted_at: u.deleted_at
+        }));
+        setUsers(formattedData);
+      }
+    } catch (error) {
+      console.error('Gagal memuat data user:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEditClick = (user) => {
     setSelectedUser(user);
     setIsEditOpen(true);
   };
 
-  const handleUpdateUser = (updatedUser) => {
-    setUsers(users.map(user => user.id === updatedUser.id ? updatedUser : user));
-    setIsEditOpen(false);
-    alert(`Sukses: Data akun ${updatedUser.name} berhasil diperbarui menjadi status ${updatedUser.status}!`);
-  };
+  // 🔥 UPDATE USER KE SUPABASE
+  const handleUpdateUser = async (updatedUser) => {
+    try {
+      const { error } = await supabase
+        .from('user_roles')
+        .update({
+          username: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role.toLowerCase(),
+          unit: updatedUser.unit
+        })
+        .eq('id', updatedUser.originalId);
 
-  const handleSoftDelete = (id, name) => {
-    if (window.confirm(`Apakah Anda yakin ingin memindahkan akun ${name} (${id}) ke tempat sampah?`)) {
-      setUsers(users.map(user => 
-        user.id === id ? { ...user, isDeleted: true } : user
-      ));
+      if (error) throw error;
+
+      setUsers(users.map(user => user.originalId === updatedUser.originalId ? updatedUser : user));
+      setIsEditOpen(false);
+      alert(`Sukses: Data akun ${updatedUser.name} berhasil diperbarui!`);
+      fetchUsersFromSupabase();
+    } catch (error) {
+      console.error('Gagal memperbarui user:', error.message);
+      alert('Terjadi kesalahan saat memperbarui database.');
     }
   };
 
-  const handleRestore = (id, name) => {
-    if (window.confirm(`Kembalikan hak akses akun untuk ${name} (${id})?`)) {
-      setUsers(users.map(user => 
-        user.id === id ? { ...user, isDeleted: false } : user
-      ));
+  // 🔥 SOFT DELETE (ARSIP KE TRASH) DI SUPABASE
+  const handleSoftDelete = async (originalId, name) => {
+    if (window.confirm(`Apakah Anda yakin ingin memindahkan akun ${name} ke tempat sampah?`)) {
+      try {
+        const timestamp = new Date().toISOString();
+        const { error } = await supabase
+          .from('user_roles')
+          .update({ deleted_at: timestamp })
+          .eq('id', originalId);
+
+        if (error) throw error;
+
+        setUsers(users.map(user => 
+          user.originalId === originalId ? { ...user, isDeleted: true, deleted_at: timestamp } : user
+        ));
+      } catch (error) {
+        console.error('Gagal mengarsipkan akun:', error.message);
+        alert('Terjadi kesalahan pada database.');
+      }
     }
   };
 
-  const handleHardDelete = (id, name) => {
-    if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN akun ${name} (${id})? Data tidak dapat dikembalikan.`)) {
-      setUsers(users.filter(user => user.id !== id));
+  // 🔥 RESTORE USER DARI TRASH
+  const handleRestore = async (originalId, name) => {
+    if (window.confirm(`Kembalikan hak akses akun untuk ${name}?`)) {
+      try {
+        const { error } = await supabase
+          .from('user_roles')
+          .update({ deleted_at: null })
+          .eq('id', originalId);
+
+        if (error) throw error;
+
+        setUsers(users.map(user => 
+          user.originalId === originalId ? { ...user, isDeleted: false, deleted_at: null } : user
+        ));
+      } catch (error) {
+        console.error('Gagal memulihkan akun:', error.message);
+        alert('Terjadi kesalahan pada database.');
+      }
+    }
+  };
+
+  // 🔥 HARD DELETE (HAPUS PERMANEN) DARI SUPABASE
+  const handleHardDelete = async (originalId, name) => {
+    if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN akun ${name}? Data tidak dapat dikembalikan.`)) {
+      try {
+        const { error } = await supabase
+          .from('user_roles')
+          .delete()
+          .eq('id', originalId);
+
+        if (error) throw error;
+
+        setUsers(users.filter(user => user.originalId !== originalId));
+      } catch (error) {
+        console.error('Gagal menghapus permanen akun:', error.message);
+        alert('Terjadi kesalahan pada database.');
+      }
     }
   };
 
@@ -95,7 +186,7 @@ export default function UserManagement() {
           {!showTrash && (
             <button 
               onClick={() => setIsAddOpen(true)}
-              className="flex items-center gap-2 bg-[#00664b] hover:bg-[#00553e] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md transition-all hover:scale-[1.02] active:scale-95"
+              className="flex items-center gap-2 bg-[#00664b] hover:bg-[#00553e] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
             >
               <Plus size={16} /> Daftarkan User Baru
             </button>
@@ -143,7 +234,13 @@ export default function UserManagement() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {processedUsers.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
+                    Memuat data dari database...
+                  </td>
+                </tr>
+              ) : processedUsers.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
                     {showTrash 
@@ -153,7 +250,7 @@ export default function UserManagement() {
                 </tr>
               ) : (
                 processedUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-zinc-50/40 transition-colors">
+                  <tr key={user.originalId} className="hover:bg-zinc-50/40 transition-colors">
                     <td className="p-4 font-mono text-xs font-bold text-zinc-900 bg-zinc-50/30">{user.id}</td>
                     <td className="p-4 font-semibold text-zinc-900">{user.name}</td>
                     <td className="p-4 text-zinc-900 font-medium">{user.email}</td>
@@ -181,13 +278,13 @@ export default function UserManagement() {
                       {showTrash ? (
                         <div className="flex justify-end gap-2">
                           <button 
-                            onClick={() => handleRestore(user.id, user.name)}
+                            onClick={() => handleRestore(user.originalId, user.name)}
                             className="p-1.5 text-amber-600 hover:bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer transition-colors"
                           >
                             <RotateCcw size={14} /> Restore
                           </button>
                           <button 
-                            onClick={() => handleHardDelete(user.id, user.name)}
+                            onClick={() => handleHardDelete(user.originalId, user.name)}
                             className="p-1.5 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer transition-colors"
                           >
                             <XCircle size={14} /> Hapus Permanen
@@ -198,14 +295,14 @@ export default function UserManagement() {
                           <button 
                             onClick={() => handleEditClick(user)}
                             title="Edit Data"
-                            className="p-1.5 text-zinc-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all inline-flex items-center"
+                            className="p-1.5 text-zinc-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all inline-flex items-center cursor-pointer"
                           >
                             <Edit3 size={16} />
                           </button>
                           <button 
-                            onClick={() => handleSoftDelete(user.id, user.name)}
+                            onClick={() => handleSoftDelete(user.originalId, user.name)}
                             title="Pindah ke Tempat Sampah"
-                            className="p-1.5 text-zinc-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all inline-flex items-center"
+                            className="p-1.5 text-zinc-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all inline-flex items-center cursor-pointer"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -220,8 +317,23 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {isAddOpen && <TambahUser onClose={() => setIsAddOpen(false)} />}
-      {isEditOpen && <EditUser userData={selectedUser} onSave={handleUpdateUser} onClose={() => setIsEditOpen(false)} />}
+      {isAddOpen && (
+        <TambahUser 
+          onClose={() => setIsAddOpen(false)} 
+          onSuccess={() => {
+            setIsAddOpen(false);
+            fetchUsersFromSupabase();
+          }} 
+        />
+      )}
+      
+      {isEditOpen && (
+        <EditUser 
+          userData={selectedUser} 
+          onSave={handleUpdateUser} 
+          onClose={() => setIsEditOpen(false)} 
+        />
+      )}
 
     </div>
   );

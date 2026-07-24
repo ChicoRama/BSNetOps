@@ -69,7 +69,7 @@ export default function App() {
             {currentView === 'stok-barang' && <StokBarang role="admin" />}
             {currentView === 'manajemen-user' && <UserManagement />}
             {currentView === 'kategori-barang' && <KategoriBarang />}
-            {currentView === 'activity-log' && <ActivityLog />}
+            {currentView === 'log-aktifitas' && <LogAktifitas />}
             {currentView === 'edit-profil' && <EditProfil />}
             {currentView === 'penyetujuan-barang' && <PenyetujuanBarang/>}
           </DashboardLayout>

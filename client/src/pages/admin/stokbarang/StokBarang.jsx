@@ -1,46 +1,95 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, Search, Filter, ArrowUpDown, RefreshCw, ArrowLeft, XCircle } from 'lucide-react';
 import TambahItem from './TambahItem';
 import EditItem from './EditItem';
-
-const initialItemsData = [
-  { id: 'BRG-001', name: 'MacBook Pro 14"', category: 'Elektronik', stock: 15, location: 'Rak A-1', date: '2026-06-15', status: 'Aman', deleted_at: null },
-  { id: 'BRG-002', name: 'Kamera Sony Alpha A7 ii', category: 'Elektronik', stock: 3, location: 'Rak A-3', date: '2026-06-20', status: 'Kritis', deleted_at: null },
-  { id: 'BRG-003', name: 'Kursi Kerja Ergonomis', category: 'Elektronik', stock: 40, location: 'Gudang B', date: '2026-05-10', status: 'Aman', deleted_at: null },
-  { id: 'BRG-004', name: 'Kertas HVS A4 80gr', category: 'ATK', stock: 120, location: 'Lemari C', date: '2026-06-28', status: 'Aman', deleted_at: null },
-  { id: 'BRG-005', name: 'Pulpen Gel Hitam Box', category: 'ATK', stock: 50, location: 'Lemari C', date: '2026-06-29', status: 'Aman', deleted_at: null },
-];
+import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient Anda
 
 export default function StokBarang({ role = 'admin' }) {
   const isAdmin = role === 'admin';
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [items, setItems] = useState(initialItemsData);
+  
+  // Ubah initial state dari array statis menjadi fetch dari Supabase
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+
   const [showTrash, setShowTrash] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Semua');
   const [sortOrder, setSortOrder] = useState('none');
+
+  // Fetch data dari Supabase saat komponen dimuat
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  const fetchItems = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('items')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) setItems(data);
+    } catch (error) {
+      console.error('Gagal mengambil data inventaris:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEditClick = (item) => {
     setSelectedItem(item);
     setIsEditOpen(true);
   };
 
-  const handleSoftDelete = (id) => {
+  const handleSoftDelete = async (id) => {
     if (window.confirm(`Apakah Anda yakin ingin menghapus item ${id}? (Data akan dipindahkan ke Trash)`)) {
-      setItems(items.map(item => item.id === id ? { ...item, deleted_at: new Date().toISOString() } : item));
+      try {
+        const timestamp = new Date().toISOString();
+        const { error } = await supabase
+          .from('items')
+          .update({ deleted_at: timestamp })
+          .eq('id', id);
+
+        if (error) throw error;
+        setItems(items.map(item => item.id === id ? { ...item, deleted_at: timestamp } : item));
+      } catch (error) {
+        console.error('Gagal arsip item:', error.message);
+      }
     }
   };
 
-  const handleRestore = (id) => {
-    setItems(items.map(item => item.id === id ? { ...item, deleted_at: null } : item));
+  const handleRestore = async (id) => {
+    try {
+      const { error } = await supabase
+        .from('items')
+        .update({ deleted_at: null })
+        .eq('id', id);
+
+      if (error) throw error;
+      setItems(items.map(item => item.id === id ? { ...item, deleted_at: null } : item));
+    } catch (error) {
+      console.error('Gagal memulihkan item:', error.message);
+    }
   };
 
-  // FUNGSI HARD DELETE BARU
-  const handleHardDelete = (id) => {
+  const handleHardDelete = async (id) => {
     if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus item ${id} secara PERMANEN? Data tidak dapat dikembalikan.`)) {
-      setItems(items.filter(item => item.id !== id));
+      try {
+        const { error } = await supabase
+          .from('items')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+        setItems(items.filter(item => item.id !== id));
+      } catch (error) {
+        console.error('Gagal menghapus permanen:', error.message);
+      }
     }
   };
 
@@ -115,8 +164,13 @@ export default function StokBarang({ role = 'admin' }) {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {processedItems.length === 0 ? (
-              // Pengecekan data kosong dipindah ke sini (di luar fungsi map)
+            {loading ? (
+              <tr>
+                <td colSpan={isAdmin ? 6 : 5} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
+                  Memuat data dari database...
+                </td>
+              </tr>
+            ) : processedItems.length === 0 ? (
               <tr>
                 <td colSpan={isAdmin ? 6 : 5} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
                   {showTrash ? 'Tidak ada item di dalam Trash.' : 'Tidak ditemukan data item yang cocok.'}
@@ -156,8 +210,27 @@ export default function StokBarang({ role = 'admin' }) {
         </table>
       </div>
 
-      {isAddOpen && <TambahItem onClose={() => setIsAddOpen(false)} />}
-      {isEditOpen && <EditItem itemData={selectedItem} onClose={() => setIsEditOpen(false)} />}
+      {/* Ketika item berhasil ditambahkan, tutup modal dan ambil ulang data dari database */}
+      {isAddOpen && (
+        <TambahItem 
+          onClose={() => setIsAddOpen(false)} 
+          onSuccess={() => {
+            setIsAddOpen(false);
+            fetchItems(); // Refresh data tabel
+          }} 
+        />
+      )}
+      
+      {isEditOpen && (
+        <EditItem 
+          itemData={selectedItem} 
+          onClose={() => setIsEditOpen(false)} 
+          onSuccess={() => {
+            setIsEditOpen(false);
+            fetchItems(); // Refresh data tabel
+          }}
+        />
+      )}
     </div>
   );
 }
