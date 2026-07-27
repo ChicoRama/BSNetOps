@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, Search, Filter, ArrowUpDown, RefreshCw, ArrowLeft, XCircle } from 'lucide-react';
 import TambahItem from './TambahItem';
 import EditItem from './EditItem';
-import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient Anda
+import { supabase } from '../../../../supabaseClient'; 
 
 export default function StokBarang({ role = 'admin' }) {
   const isAdmin = role === 'admin';
@@ -10,7 +10,6 @@ export default function StokBarang({ role = 'admin' }) {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   
-  // Ubah initial state dari array statis menjadi fetch dari Supabase
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,7 +18,6 @@ export default function StokBarang({ role = 'admin' }) {
   const [categoryFilter, setCategoryFilter] = useState('Semua');
   const [sortOrder, setSortOrder] = useState('none');
 
-  // Fetch data dari Supabase saat komponen dimuat
   useEffect(() => {
     fetchItems();
   }, []);
@@ -77,19 +75,38 @@ export default function StokBarang({ role = 'admin' }) {
     }
   };
 
-  const handleHardDelete = async (id) => {
-    if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus item ${id} secara PERMANEN? Data tidak dapat dikembalikan.`)) {
-      try {
-        const { error } = await supabase
+  // 🔥 CEK APAKAH BARANG PERNAH DIREQUEST SEBELUM HAPUS PERMANEN
+  const handleHardDelete = async (item) => {
+    try {
+      // 1. Cek ke tabel request_items berdasarkan kode barang (id) atau nama barang
+      const { count, error: checkError } = await supabase
+        .from('request_items')
+        .select('*', { count: 'exact', head: true })
+        .or(`kode_barang.eq.${item.id},nama_barang.ilike.${item.name}`);
+
+      if (checkError) throw checkError;
+
+      // 2. Jika barang tercatat pernah di-request, blokir hapus permanen!
+      if (count && count > 0) {
+        alert(`❌ TIDAK BISA DIHAPUS PERMANEN!\n\nBarang "${item.name}" (ID: ${item.id}) sudah pernah diajukan/di-request oleh user dalam riwayat transaksi.\n\nBarang ini hanya diizinkan untuk masuk ke Trash (Soft Delete) demi keamanan data riwayat.`);
+        return;
+      }
+
+      // 3. Jika belum pernah di-request sama sekali, izinkan hapus permanen
+      if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus item ${item.id} secara PERMANEN? Data tidak dapat dikembalikan.`)) {
+        const { error: deleteError } = await supabase
           .from('items')
           .delete()
-          .eq('id', id);
+          .eq('id', item.id);
 
-        if (error) throw error;
-        setItems(items.filter(item => item.id !== id));
-      } catch (error) {
-        console.error('Gagal menghapus permanen:', error.message);
+        if (deleteError) throw deleteError;
+        setItems(items.filter(i => i.id !== item.id));
+        alert(`Sukses menghapus permanen item ${item.id}.`);
       }
+
+    } catch (error) {
+      console.error('Gagal memeriksa riwayat / menghapus permanen:', error.message);
+      alert('Terjadi kesalahan saat memproses data.');
     }
   };
 
@@ -126,7 +143,7 @@ export default function StokBarang({ role = 'admin' }) {
         <div className="flex items-center gap-3">
           {!showTrash && (
             <button onClick={() => setShowTrash(true)} className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-sm font-semibold hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer group">
-              <Trash2 size={16} />
+              <Trash2 size={16} /> Trash
             </button>
           )}
           {isAdmin && !showTrash && (
@@ -191,7 +208,7 @@ export default function StokBarang({ role = 'admin' }) {
                           <button onClick={() => handleRestore(item.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer">
                             <RefreshCw size={14} /> Restore
                           </button>
-                          <button onClick={() => handleHardDelete(item.id)} className="p-1.5 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer">
+                          <button onClick={() => handleHardDelete(item)} className="p-1.5 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer">
                             <XCircle size={14} /> Hapus Permanen
                           </button>
                         </div>
@@ -210,13 +227,12 @@ export default function StokBarang({ role = 'admin' }) {
         </table>
       </div>
 
-      {/* Ketika item berhasil ditambahkan, tutup modal dan ambil ulang data dari database */}
       {isAddOpen && (
         <TambahItem 
           onClose={() => setIsAddOpen(false)} 
           onSuccess={() => {
             setIsAddOpen(false);
-            fetchItems(); // Refresh data tabel
+            fetchItems(); 
           }} 
         />
       )}
@@ -227,7 +243,7 @@ export default function StokBarang({ role = 'admin' }) {
           onClose={() => setIsEditOpen(false)} 
           onSuccess={() => {
             setIsEditOpen(false);
-            fetchItems(); // Refresh data tabel
+            fetchItems(); 
           }}
         />
       )}
