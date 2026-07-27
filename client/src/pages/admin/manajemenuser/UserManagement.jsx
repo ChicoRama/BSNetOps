@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, Search, Filter, Shield, UserCheck, RotateCcw, XCircle, ArrowLeft } from 'lucide-react';
 import TambahUser from './TambahUser';
 import EditUser from './EditUser';
-import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient Anda
+import { supabase } from '../../../../supabaseClient'; 
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -34,11 +34,13 @@ export default function UserManagement() {
         // Mapping data dari Supabase ke format state komponen
         const formattedData = data.map(u => ({
           id: u.staff_id || u.id,
-          originalId: u.id, // Primary Key UUID asli untuk query Supabase (.eq('id', ...))
+          originalId: u.id, 
           name: u.username || 'Tanpa Nama',
           email: u.email,
           role: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Staff',
-          status: 'Aktif', // Bisa disesuaikan jika ada kolom status di database
+          unit: u.unit || 'KC Semarang',
+          isSuspended: u.is_suspended || false, // 🔥 Tangkap status suspend dari database
+          status: u.is_suspended ? 'Ditangguhkan' : 'Aktif', 
           isDeleted: u.deleted_at ? true : false,
           deleted_at: u.deleted_at
         }));
@@ -56,7 +58,7 @@ export default function UserManagement() {
     setIsEditOpen(true);
   };
 
-  // 🔥 UPDATE USER KE SUPABASE
+  // 🔥 UPDATE USER & STATUS SUSPEND KE SUPABASE
   const handleUpdateUser = async (updatedUser) => {
     try {
       const { error } = await supabase
@@ -65,16 +67,16 @@ export default function UserManagement() {
           username: updatedUser.name,
           email: updatedUser.email,
           role: updatedUser.role.toLowerCase(),
-          unit: updatedUser.unit
+          unit: updatedUser.unit,
+          is_suspended: updatedUser.isSuspended // 🔥 Simpan status suspend ke database
         })
         .eq('id', updatedUser.originalId);
 
       if (error) throw error;
 
-      setUsers(users.map(user => user.originalId === updatedUser.originalId ? updatedUser : user));
       setIsEditOpen(false);
       alert(`Sukses: Data akun ${updatedUser.name} berhasil diperbarui!`);
-      fetchUsersFromSupabase();
+      fetchUsersFromSupabase(); // Refresh data terbaru
     } catch (error) {
       console.error('Gagal memperbarui user:', error.message);
       alert('Terjadi kesalahan saat memperbarui database.');
@@ -154,7 +156,7 @@ export default function UserManagement() {
   return (
     <div className="space-y-6 animate-in fade-in duration-300 relative">
       
-      {/* Header Utama disamakan dengan layout Stok Barang */}
+      {/* Header Utama */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           {showTrash && (
@@ -269,8 +271,10 @@ export default function UserManagement() {
                         <span className="text-xs font-semibold text-red-500">Terhapus</span>
                       ) : (
                         <>
-                          <span className={`inline-block h-2 w-2 rounded-full mr-2 ${user.status === 'Aktif' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                          <span className={`text-xs font-semibold ${user.status === 'Aktif' ? 'text-zinc-800' : 'text-red-600'}`}>{user.status}</span>
+                          <span className={`inline-block h-2 w-2 rounded-full mr-2 ${!user.isSuspended ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                          <span className={`text-xs font-semibold ${!user.isSuspended ? 'text-zinc-800' : 'text-red-600'}`}>
+                            {!user.isSuspended ? 'Aktif' : 'Ditangguhkan'}
+                          </span>
                         </>
                       )}
                     </td>

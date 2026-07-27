@@ -9,7 +9,7 @@ export default function EditUser({ userData, onClose, onSave }) {
     email: '', 
     role: 'Staff', 
     unit: 'KC Semarang',
-    status: 'Aktif', 
+    isSuspended: false, // 🔥 Menambahkan state penangguhan akun
     isDeleted: false 
   });
 
@@ -22,7 +22,7 @@ export default function EditUser({ userData, onClose, onSave }) {
         email: userData.email || '',
         role: userData.role || 'Staff',
         unit: userData.unit || 'KC Semarang',
-        status: userData.status || 'Aktif',
+        isSuspended: userData.isSuspended || false, // 🔥 Ambil nilai suspend dari data user
         isDeleted: userData.isDeleted || false 
       });
     }
@@ -96,6 +96,22 @@ export default function EditUser({ userData, onClose, onSave }) {
                 <option value="KCP Ungaran">KCP Ungaran</option>
               </select>
             </div>
+          </div>
+
+          {/* 🔥 DROPDOWN STATUS KEAKTIFAN AKUN (MENANGGUHKAN / SUSPEND) */}
+          <div>
+            <label className="block text-sm font-semibold text-zinc-700 mb-1">Status Keaktifan Akun</label>
+            <select 
+              value={formData.isSuspended ? "suspended" : "active"} 
+              onChange={(e) => setFormData({ ...formData, isSuspended: e.target.value === "suspended" })} 
+              className={`w-full px-4 py-2 border rounded-lg text-sm font-semibold focus:outline-none cursor-pointer ${
+                formData.isSuspended ? 'bg-red-50 border-red-300 text-red-600' : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+              }`}
+            >
+              <option value="active">✅ Aktif (Diizinkan Login)</option>
+              <option value="suspended">⛔ Ditangguhkan / Suspended (Blokir Login)</option>
+            </select>
+            <p className="text-[11px] text-zinc-400 mt-1">Jika ditangguhkan, user tidak akan bisa masuk ke dalam sistem saat mencoba login.</p>
           </div>
 
           <div className="pt-4 flex justify-end gap-2 border-t border-zinc-100">

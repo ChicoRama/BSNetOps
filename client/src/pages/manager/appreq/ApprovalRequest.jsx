@@ -239,12 +239,30 @@ export default function ApprovalRequest() {
     });
   };
 
-  const activeDetail = requests.find(item => item.id === selectedId);
+const activeDetail = requests.find(item => item.id === selectedId);
 
+  // 1. Ambil nama Manager yang sedang login dari localStorage
+  const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
+  const namaManager = activeUser.namaLengkap || activeUser.name || activeUser.username || 'Manager';
+
+  // 2. Cek apakah status request sudah disetujui sepenuhnya
+  const isApproved = activeDetail?.status?.toLowerCase() === 'selesai';
+
+  // 3. Generate URL gambar QR Code jika statusnya sudah di-ACC
+  const qrAdmin = isApproved ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Admin_Agus_ID:${activeDetail?.id}` : null;
+  const qrManager = isApproved ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Manager_${namaManager.replace(/\s+/g, '_')}_ID:${activeDetail?.id}` : null;
+
+  // 4. Mapping data untuk dikirim ke TemplateDokumenA4
   const mappedFormData = activeDetail ? {
     divisi: activeDetail.unit,
     alasanDibutuhkan: activeDetail.keperluan,
-    namaLengkap: activeDetail.namaPemohon
+    namaLengkap: activeDetail.namaPemohon,
+    status: activeDetail.status,
+    isApproved: isApproved,
+    adminName: 'Mas Agus',
+    managerName: namaManager,
+    qrAdmin: qrAdmin,
+    qrManager: qrManager
   } : {};
 
   const mappedDaftarBarang = activeDetail ? activeDetail.items.map(item => ({

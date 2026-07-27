@@ -62,15 +62,22 @@ export default function AdminDashboard({ role = 'admin' }) {
       let totalKeluarCount = 0;
       if (logData) {
         const formattedLogs = logData.map(log => {
-          if (log.type === 'Keluar') {
-            totalKeluarCount += (log.qty || 0);
+          // 🔥 PERBAIKAN: Menangkap baik kata 'Keluar' maupun 'Pengeluaran'
+          const logType = (log.type || '').trim();
+          
+          if (logType === 'Keluar' || logType === 'Pengeluaran') {
+            totalKeluarCount += (parseInt(log.qty) || 0);
           }
+          
+          // Format tanggal default fallback ke created_at
+          const displayDate = log.date || (log.created_at ? new Date(log.created_at).toLocaleDateString('id-ID') : '-');
+
           return {
             id: log.transaction_id || log.id,
             item: log.item_name,
-            unit: log.type === 'Masuk' ? 'Gudang Utama' : (log.requester || 'Kantor Cabang'), // Menyesuaikan kolom unit
-            type: log.type,
-            date: log.date
+            unit: logType === 'Masuk' ? 'Gudang Utama' : (log.requester || 'Kantor Cabang'),
+            type: logType === 'Pengeluaran' ? 'Keluar' : logType, // Standardisasi label UI menjadi 'Keluar'
+            date: displayDate
           };
         });
 
@@ -156,7 +163,7 @@ export default function AdminDashboard({ role = 'admin' }) {
               <thead>
                 <tr className="text-zinc-500 border-b bg-zinc-50/50 text-xs uppercase font-semibold">
                   <th className="pb-3 pt-2 px-2">Barang</th>
-                  <th className="pb-3 pt-2 px-2">Unit</th>
+                  <th className="pb-3 pt-2 px-2">Nama</th>
                   <th className="pb-3 pt-2 px-2">Status</th>
                   <th className="pb-3 pt-2 px-2">Tanggal</th>
                 </tr>

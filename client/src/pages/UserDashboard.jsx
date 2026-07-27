@@ -1,26 +1,115 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PlusCircle, Hourglass, Package, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
+import { supabase } from '../../supabaseClient'; 
 
 export default function UserDashboard({ setCurrentView }) {
-  // Data dummy untuk melacak proses request terakhir
-  const lastRequest = {
-    item: 'Laptop Dell Latitude',
-    category: 'Elektronik',
-    date: '30 Juni 2026',
-    // Tahapan proses: 1 = Diajukan, 2 = Disetujui Manajer, 3 = Siap Diambil
-    currentStep: 2, 
+  const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState('Chico Diar');
+  const [lastRequest, setLastRequest] = useState({
+    item: 'Belum ada permintaan',
+    category: '-',
+    date: '-',
+    currentStep: 1,
+    statusText: 'Belum ada aktivitas',
     steps: [
       { id: 1, name: 'Permintaan Diajukan' },
-      { id: 2, name: 'Persetujuan Manajer' },
+      { id: 2, name: 'Menunggu Persetujuan Manager' },
       { id: 3, name: 'Barang Siap Diambil' }
     ]
+  });
+
+  useEffect(() => {
+    fetchUserDataAndLastRequest();
+  }, []);
+
+  const fetchUserDataAndLastRequest = async () => {
+    setLoading(true);
+    try {
+      const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+      const userEmail = activeUser?.email || activeUser?.mail || '';
+      const fallbackName = activeUser?.namaLengkap || activeUser?.name || 'Chico Diar';
+      setUserName(fallbackName);
+
+      if (!userEmail) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: reqData, error: reqError } = await supabase
+        .from('requests')
+        .select(`
+          id,
+          tanggal,
+          status,
+          keperluan,
+          request_items (
+            nama_barang,
+            is_received
+          )
+        `)
+        .eq('email_pemohon', userEmail)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (reqError) throw reqError;
+
+      if (reqData) {
+        const rawStatus = (reqData.status || '').toLowerCase().trim();
+        const items = reqData.request_items || [];
+        const allItemsReceived = items.length > 0 && items.every(i => i.is_received === true);
+        
+        let step = 1;
+        let badgeText = 'Dalam Proses';
+
+        // 🌟 PEMETAAN TAHAPAN YANG PAS:
+        if (rawStatus.includes('menunggu')) {
+          // Jika baru diajukan atau sedang dalam antrean manager
+          step = 2; // Berada di tahap Menunggu Persetujuan Manager
+          badgeText = 'Menunggu Persetujuan Manager';
+        } else if (rawStatus.includes('selesai') || rawStatus.includes('approved') || rawStatus.includes('completed')) {
+          if (allItemsReceived) {
+            step = 3; 
+            badgeText = 'Barang Telah Diambil (Selesai)';
+          } else {
+            step = 3; // Tahap 3: Barang Siap Diambil (Setelah Manager ACC Final)
+            badgeText = 'Barang Siap Diambil di Gudang';
+          }
+        } else if (rawStatus.includes('ditolak')) {
+          step = 1;
+          badgeText = 'Ditolak';
+        }
+
+        const firstItemName = items[0]?.nama_barang || 'Permintaan Logistik';
+        const totalItemsCount = items.length;
+        const displayItemName = totalItemsCount > 1 ? `${firstItemName} (+${totalItemsCount - 1} barang lainnya)` : firstItemName;
+
+        setLastRequest({
+          item: displayItemName,
+          category: reqData.keperluan || 'Inventaris BSN',
+          date: reqData.tanggal || '-',
+          currentStep: step,
+          statusText: badgeText,
+          steps: [
+            { id: 1, name: 'Permintaan Diajukan' },
+            { id: 2, name: 'Menunggu Persetujuan Manager' },
+            { id: 3, name: 'Barang Siap Diambil' }
+          ]
+        });
+      }
+
+    } catch (error) {
+      console.error('Gagal mengambil data dashboard user:', error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* 1. Area Greetings (Dibuat Rounded & Shadow) */}
+      {/* 1. Area Greetings */}
       <div className="bg-gradient-to-r from-[#00664b] to-[#004d38] p-6 text-white rounded-xl shadow-md border border-[#00553e] transition-all hover:scale-[1.005]">
-        <h2 className="text-2xl font-bold">Halo, Chico Diar 👋</h2>
+        <h2 className="text-2xl font-bold">Halo, {userName} 👋</h2>
         <p className="text-green-100 text-sm mt-1">Mau ambil atau cek inventaris barang apa hari ini? Semangat ya!</p>
       </div>
 
@@ -29,7 +118,6 @@ export default function UserDashboard({ setCurrentView }) {
         <h3 className="text-white font-semibold mb-3 text-sm tracking-wide uppercase">Aksi</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           
-          {/* Action 1: Request Barang -> Ajukan Permintaan */}
           <button 
             onClick={() => setCurrentView && setCurrentView('ajukan-permintaan')}
             className="flex items-center justify-between p-5 bg-white border border-zinc-200 rounded-xl shadow-md hover:border-[#00664b] hover:shadow-lg transition-all group text-left w-full hover:scale-[1.01] cursor-pointer"
@@ -46,7 +134,6 @@ export default function UserDashboard({ setCurrentView }) {
             <ArrowRight size={16} className="text-zinc-400 group-hover:text-[#00664b] group-hover:translate-x-1 transition-all" />
           </button>
 
-          {/* Action 2: Progres Request -> Riwayat Permintaan */}
           <button 
             onClick={() => setCurrentView && setCurrentView('riwayat-permintaan')}
             className="flex items-center justify-between p-5 bg-white border border-zinc-200 rounded-xl shadow-md hover:border-blue-500 hover:shadow-lg transition-all group text-left w-full hover:scale-[1.01] cursor-pointer"
@@ -63,7 +150,6 @@ export default function UserDashboard({ setCurrentView }) {
             <ArrowRight size={16} className="text-zinc-400 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
           </button>
 
-          {/* Action 3: Lihat Inventory -> Aset */}
           <button 
             onClick={() => setCurrentView && setCurrentView('aset')}
             className="flex items-center justify-between p-5 bg-white border border-zinc-200 rounded-xl shadow-md hover:border-amber-500 hover:shadow-lg transition-all group text-left w-full hover:scale-[1.01] cursor-pointer"
@@ -83,26 +169,30 @@ export default function UserDashboard({ setCurrentView }) {
         </div>
       </div>
 
-      {/* 3. Lacak Proses Request Terakhir */}
+      {/* 3. Lacak Proses Request Terakhir (Dari Database) */}
       <div className="bg-white p-6 border border-zinc-200 rounded-xl shadow-md">
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <div>
             <h3 className="font-bold text-zinc-900 text-lg">Permintaan Terakhir Anda</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">Memonitor logistik barang secara real-time</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Memonitor logistik barang secara real-time dari database</p>
           </div>
           <span className="text-xs bg-zinc-100 text-zinc-600 px-2.5 py-1 font-medium rounded-md">
-            {lastRequest.date}
+            {loading ? 'Memuat...' : lastRequest.date}
           </span>
         </div>
 
         {/* Info Barang */}
-        <div className="mb-6 p-4 bg-zinc-50 border border-zinc-150 rounded-lg flex justify-between items-center">
+        <div className="mb-6 p-4 bg-zinc-50 border border-zinc-200 rounded-lg flex justify-between items-center">
           <div>
-            <p className="text-sm font-semibold text-zinc-900">{lastRequest.item}</p>
-            <p className="text-xs text-zinc-500 mt-0.5">Kategori: {lastRequest.category}</p>
+            <p className="text-sm font-semibold text-zinc-900">
+              {loading ? 'Memuat data permintaan...' : lastRequest.item}
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">Keperluan: {lastRequest.category}</p>
           </div>
-          <span className="text-xs font-semibold px-2.5 py-1 bg-amber-100 text-amber-800 rounded-md">
-            Dalam Proses
+          <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
+            lastRequest.currentStep === 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+          }`}>
+            {loading ? '...' : lastRequest.statusText}
           </span>
         </div>
 
@@ -142,7 +232,7 @@ export default function UserDashboard({ setCurrentView }) {
                   <p className={`text-sm font-medium ${isCurrent ? 'text-[#00664b] font-semibold' : isCompleted ? 'text-zinc-900' : 'text-zinc-400'}`}>
                     {step.name}
                   </p>
-                  {isCurrent && <p className="text-[10px] text-zinc-500 md:mt-0.5">Sedang direview</p>}
+                  {isCurrent && <p className="text-[10px] text-zinc-500 md:mt-0.5">Status saat ini</p>}
                 </div>
               </div>
             );

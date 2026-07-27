@@ -37,7 +37,6 @@ export default function LoginPage() {
     });
   };
 
-  // FUNGSI LOGIN YANG SUDAH FULL UPDATE
   const handleLogin = async (e) => {
     e.preventDefault();
 
@@ -49,8 +48,22 @@ export default function LoginPage() {
     setError(newError);
     if (newError.username || newError.password) return;
 
-    // 1. PROSES LOGIN KE SUPABASE AUTH
     const inputEmail = form.username.toLowerCase();
+
+    // 🔥 1. CEK STATUS PENANGGUHAN AKUN DI TABEL user_roles SEBELUM LOGIN
+    const { data: roleData, error: roleError } = await supabase
+      .from('user_roles')
+      .select('role, is_suspended')
+      .eq('email', inputEmail)
+      .maybeSingle(); 
+
+    // Jika akun terdeteksi ditangguhkan (is_suspended = true), hentikan proses login
+    if (roleData && roleData.is_suspended === true) {
+      alert("❌ AKUN DITANGGUHKAN!\n\nAnda tidak memiliki akses untuk masuk ke dalam sistem. Silakan hubungi Administrator Gudang untuk informasi lebih lanjut.");
+      return; 
+    }
+
+    // 2. PROSES LOGIN KE SUPABASE AUTH (Hanya berjalan jika tidak disuspend)
     const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
       email: inputEmail, 
       password: form.password,
@@ -61,13 +74,11 @@ export default function LoginPage() {
       return;
     }
 
-    // 2. SIMPAN TOKEN & PROFIL KE LOCALSTORAGE
+    // 3. SIMPAN TOKEN & PROFIL DASAR KE LOCALSTORAGE
     if (data.session) {
-      // Simpan Token
       localStorage.setItem("token", data.session.access_token);
       localStorage.setItem("access_token", data.session.access_token);
 
-      // Simpan Profil Dasar
       const profileInfo = {
         email: inputEmail,
         namaLengkap: data.user?.user_metadata?.full_name || inputEmail.split('@')[0],
@@ -79,23 +90,12 @@ export default function LoginPage() {
       localStorage.setItem("userProfile", JSON.stringify(profileInfo));
     }
 
-    // 3. CEK ROLE USER DI TABEL 'user_roles'
-    const { data: roleData, error: roleError } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('email', inputEmail)
-      .single(); 
-
+    // 4. REDIRECT BERDASARKAN ROLE
     let userRole = "user"; 
-    
     if (roleData && roleData.role) {
-      userRole = roleData.role; 
+      userRole = roleData.role.toLowerCase(); 
     }
 
-    console.log("Data role dari tabel:", roleData);
-    console.log("Role yang dipakai untuk redirect:", userRole);
-
-    // 4. REDIRECT BERDASARKAN ROLE
     if (userRole === "admin") {
       navigate("/admin");
     } else if (userRole === "manager") {

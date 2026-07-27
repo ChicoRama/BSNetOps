@@ -6,7 +6,7 @@ export default function TambahUser({ onClose, onSuccess }) {
   const [formData, setFormData] = useState({ 
     name: '', 
     email: '', 
-    role: 'staff', 
+    role: 'Staff', 
     unit: 'KC Semarang' 
   });
   
@@ -22,7 +22,7 @@ export default function TambahUser({ onClose, onSuccess }) {
       const randomIdNum = Math.floor(100 + Math.random() * 900);
       const generatedStaffId = `BSN-${randomIdNum}`;
 
-      // 2. Insert data ke tabel 'user_roles' Supabase
+      // 2. Insert data ke tabel 'user_roles' Supabase (Otomatis is_suspended: false)
       const { error } = await supabase
         .from('user_roles')
         .insert([
@@ -30,8 +30,9 @@ export default function TambahUser({ onClose, onSuccess }) {
             staff_id: generatedStaffId,
             username: formData.name,
             email: formData.email,
-            role: formData.role.toLowerCase(), // Menyimpan 'staff' atau 'admin'
-            unit: formData.unit
+            role: formData.role.toLowerCase(), // Menyimpan 'staff', 'admin', atau 'manager'
+            unit: formData.unit,
+            is_suspended: false // 🔥 User baru otomatis aktif/diberi akses login
           }
         ]);
 

@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Mail, Shield, Camera, Save, Building, Briefcase, Phone } from 'lucide-react';
+import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient kamu
 
 export default function EditProfil() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  
   const [profile, setProfile] = useState({
     namaLengkap: '',
     nipPegawai: '',
@@ -12,36 +17,60 @@ export default function EditProfil() {
     avatar: null
   });
 
+  const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
 
+  // 1. AUTOFILL DATA DARI DATABASE SAAT HALAMAN DIBUKA
   useEffect(() => {
-    const savedProfile = JSON.parse(localStorage.getItem('userProfile'));
-    if (savedProfile) {
-      setProfile({
-        namaLengkap: savedProfile.namaLengkap || savedProfile.name || '',
-        nipPegawai: savedProfile.nipPegawai || savedProfile.nim || '',
-        email: savedProfile.email || '',
-        divisi: savedProfile.divisi || '',
-        jabatan: savedProfile.jabatan || '',
-        noTelepon: savedProfile.noTelepon || '',
-        avatar: savedProfile.avatar || null
-      });
-    } else {
-      setProfile({
-        namaLengkap: 'Chico Diar Ramadhan',
-        nipPegawai: '21120124140150',
-        email: 'chico.diar@example.com',
-        divisi: 'KC Semarang', 
-        jabatan: 'User', 
-        noTelepon: '085157778659',
-        avatar: null
-      });
-    }
+    fetchProfileFromSupabase();
   }, []);
+
+  const fetchProfileFromSupabase = async () => {
+    setLoading(true);
+    try {
+      // Ambil email dari sesi aktif yang tersimpan saat login/register
+      const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+      const email = activeUser?.email || activeUser?.mail || '';
+      
+      if (!email) {
+        setLoading(false);
+        return;
+      }
+
+      setUserEmail(email);
+
+      // Tarik data asli dari tabel 'user_roles' berdasarkan email user yang sedang login
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('*')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        // Autofill field form dengan data awal dari database
+        setProfile({
+          namaLengkap: data.username || data.nama_lengkap || '',
+          nipPegawai: data.staff_id || data.nip_pegawai || '-',
+          email: data.email || email,
+          divisi: data.unit || data.divisi || '',
+          jabatan: data.jabatan || (data.role ? data.role.charAt(0).toUpperCase() + data.role.slice(1) : ''),
+          noTelepon: data.no_telepon || data.phone || '',
+          avatar: data.avatar_url || null
+        });
+      }
+    } catch (error) {
+      console.error('Gagal mengambil data autofill profil:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      setSelectedFile(file);
       const imageUrl = URL.createObjectURL(file);
       setProfile({ ...profile, avatar: imageUrl });
     }
@@ -52,17 +81,78 @@ export default function EditProfil() {
     setProfile(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSave = (e) => {
+  // 2. SIMPAN PERUBAHAN KE DATABASE SUPABASE
+  const handleSave = async (e) => {
     e.preventDefault();
-    localStorage.setItem('userProfile', JSON.stringify(profile));
-    alert('Profil berhasil diperbarui dan disinkronkan ke sistem!');
+    setSaving(true);
+
+    try {
+      let avatarUrl = profile.avatar;
+
+      // Jika user memilih foto baru, upload ke Supabase Storage bucket 'avatars'
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split('.').pop();
+        const fileName = `${userEmail.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(filePath, selectedFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicURLData } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(filePath);
+
+        avatarUrl = publicURLData.publicUrl;
+      }
+
+      // Update data terbaru ke tabel 'user_roles' Supabase
+      const { error: updateError } = await supabase
+        .from('user_roles')
+        .update({
+          username: profile.namaLengkap,
+          unit: profile.divisi,
+          jabatan: profile.jabatan,
+          no_telepon: profile.noTelepon,
+          avatar_url: avatarUrl
+        })
+        .eq('email', userEmail);
+
+      if (updateError) throw updateError;
+
+      // Sinkronkan ke localStorage supaya Sidebar langsung ikut terupdate
+      localStorage.setItem('userProfile', JSON.stringify({
+        email: userEmail,
+        namaLengkap: profile.namaLengkap,
+        divisi: profile.divisi,
+        jabatan: profile.jabatan,
+        avatar: avatarUrl
+      }));
+
+      alert('Profil berhasil diperbarui dan tersimpan ke database!');
+
+      window.dispatchEvent(new Event('profileUpdated'));
+
+      fetchProfileFromSupabase();
+    } catch (error) {
+      console.error('Gagal menyimpan profil:', error.message);
+      alert('Terjadi kesalahan saat menyimpan ke database: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return <div className="p-12 text-center text-white font-medium">Memuat data profil...</div>;
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
       <div>
-        <h2 className="text-xl font-bold text-zinc-900">Pengaturan Akun</h2>
-        <p className="text-xs text-zinc-500 mt-0.5">Kelola identitas personal dan info kontak Anda</p>
+        <h2 className="text-xl font-bold text-white">Pengaturan Akun</h2>
+        <p className="text-xs text-white/80 mt-0.5">Kelola identitas personal dan info kontak Anda</p>
       </div>
 
       <div className="bg-white border border-zinc-200/80 shadow-md rounded-2xl overflow-hidden">
@@ -75,7 +165,7 @@ export default function EditProfil() {
                 <img src={profile.avatar} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center font-black text-2xl text-[#478767] bg-emerald-50 tracking-tighter">
-                  {profile.namaLengkap ? profile.namaLengkap.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'CD'}
+                  {profile.namaLengkap ? profile.namaLengkap.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'BSN'}
                 </div>
               )}
               <button
@@ -113,19 +203,19 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">ID Pegawai</label>
               <div className="relative flex items-center">
                 <Shield size={16} className="absolute left-3 text-zinc-400" />
-                <input type="text" name="nipPegawai" value={profile.nipPegawai} onChange={handleChange} className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
+                <input type="text" name="nipPegawai" value={profile.nipPegawai} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" title="ID Pegawai tidak dapat diubah" />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Unit</label>
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Unit / Cabang</label>
               <div className="relative flex items-center">
-                <Building size={16} className="absolute left-3 text-zinc-400" />
+                <Building size={16} className="absolute left-3 text-zinc-400 z-10 pointer-events-none" />
                 <select 
                   name="divisi" 
                   value={profile.divisi} 
                   onChange={handleChange} 
-                  className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer" 
+                  className="w-full pl-10 pr-8 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer appearance-none" 
                   required
                 >
                   <option value="" disabled hidden>Pilih Unit</option>
@@ -144,17 +234,7 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Jabatan</label>
               <div className="relative flex items-center">
                 <Briefcase size={16} className="absolute left-3 text-zinc-400" />
-                <select 
-                  name="jabatan" 
-                  value={profile.jabatan} 
-                  onChange={handleChange} 
-                  className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer" 
-                  required
-                >
-                  <option value="" disabled hidden>Pilih Jabatan</option>
-                  <option value="Head User">Head User</option>
-                  <option value="User">User</option>
-                </select>
+                <input type="text" name="jabatan" value={profile.jabatan} onChange={handleChange} placeholder="Contoh: Staff Logistik" className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
               </div>
             </div>
 
@@ -162,7 +242,7 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Alamat Email</label>
               <div className="relative flex items-center">
                 <Mail size={16} className="absolute left-3 text-zinc-400" />
-                <input type="email" name="email" value={profile.email} onChange={handleChange} className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
+                <input type="email" name="email" value={profile.email} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" />
               </div>
             </div>
 
@@ -170,14 +250,14 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">No Telephone</label>
               <div className="relative flex items-center">
                 <Phone size={16} className="absolute left-3 text-zinc-400" />
-                <input type="tel" name="noTelepon" value={profile.noTelepon} onChange={handleChange} className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
+                <input type="tel" name="noTelepon" value={profile.noTelepon} onChange={handleChange} placeholder="08xxxxxxxxxx" className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
               </div>
             </div>
           </div>
 
           <div className="pt-6 border-t border-zinc-100 flex justify-end mt-4">
-            <button type="submit" className="px-5 py-2.5 bg-[#58a27d] hover:bg-[#478767] text-white rounded-lg text-sm font-bold flex items-center gap-2 shadow-md shadow-[#58a27d]/10 hover:shadow-lg transition-all cursor-pointer">
-              <Save size={16} /> Simpan Perubahan
+            <button type="submit" disabled={saving} className="px-5 py-2.5 bg-[#58a27d] hover:bg-[#478767] text-white rounded-lg text-sm font-bold flex items-center gap-2 shadow-md shadow-[#58a27d]/10 hover:shadow-lg transition-all cursor-pointer disabled:opacity-50">
+              <Save size={16} /> {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
             </button>
           </div>
         </form>

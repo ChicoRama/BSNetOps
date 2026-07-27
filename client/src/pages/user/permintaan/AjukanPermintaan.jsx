@@ -41,12 +41,11 @@ export default function AjukanPermintaan() {
         email: activeUser.email || ''
       }));
 
-      // 🔥 Sambung ke database Supabase tabel 'user_roles' untuk menarik data lengkap (NIP/staff_id, Unit/unit, Jabatan/role)
+      // 🔥 Sambung ke database Supabase tabel 'user_roles' untuk menarik data lengkap
       fetchUserProfileFromDB(identifier);
     }
   }, [isMultiItem]);
 
-  // Fungsi untuk mengambil data lengkap dari database Supabase (tabel user_roles)
   const fetchUserProfileFromDB = async (identifier) => {
     if (!identifier) return;
     try {
@@ -62,9 +61,9 @@ export default function AjukanPermintaan() {
         setFormData(prev => ({
           ...prev,
           namaLengkap: data.username || data.email?.split('@')[0] || prev.namaLengkap,
-          nipPegawai: data.staff_id || '', // Mengambil dari kolom staff_id
-          divisi: data.unit || '',            // Mengambil dari kolom unit
-          jabatan: data.role || 'User',       // Mengambil dari kolom role
+          nipPegawai: data.staff_id || '', 
+          divisi: data.unit || '',            
+          jabatan: data.role || 'User',       
           email: data.email || prev.email,
         }));
       }
@@ -73,7 +72,6 @@ export default function AjukanPermintaan() {
     }
   };
 
-  // 🔥 FUNGSI OTOMATIS: Hitung frekuensi permintaan barang dalam 1 tahun terakhir
   const initializeItemsWithAutoPriority = async (assets) => {
     setIsCheckingPriority(true);
     try {
@@ -93,9 +91,9 @@ export default function AjukanPermintaan() {
         const frequency = count || 0;
         let calculatedPriority = 'Rendah';
 
-        if (frequency > 5) {
+        if (frequency > 50) {
           calculatedPriority = 'Tinggi';
-        } else if (frequency >= 2) {
+        } else if (frequency >= 20) {
           calculatedPriority = 'Sedang';
         } else {
           calculatedPriority = 'Rendah';
@@ -161,7 +159,7 @@ export default function AjukanPermintaan() {
     else if (currentStep === 3) setCurrentStep(2);
   };
 
-  const handleSubmitFinal = async () => {
+const handleSubmitFinal = async () => {
     setIsExporting(true); 
 
     try {
@@ -169,12 +167,14 @@ export default function AjukanPermintaan() {
       const randomCode = Math.floor(100 + Math.random() * 900);
       const generatedId = `REQ-${dateCode}-${randomCode}`;
 
+      // 1. Simpan data utama request
       const { error: reqError } = await supabase
         .from('requests')
         .insert([
           {
             id: generatedId,
             nama_pemohon: formData.namaLengkap,
+            email_pemohon: formData.email,
             unit: formData.divisi,
             tanggal: formData.tanggalDibutuhkan,
             jam: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
@@ -186,6 +186,7 @@ export default function AjukanPermintaan() {
 
       if (reqError) throw reqError;
 
+      // 2. Simpan rincian item barang
       const itemsToInsert = daftarBarang.map(b => ({
         request_id: generatedId, 
         kode_barang: b.kodeAset,
@@ -201,6 +202,33 @@ export default function AjukanPermintaan() {
 
       if (itemsError) throw itemsError;
 
+      // 🔥 3. KIRIM NOTIFIKASI SECARA OTOMATIS & DINAMIS KE ADMIN/MANAGER
+      try {
+        // Ambil semua email user yang rolenya 'admin' atau 'manager' langsung dari database
+        const { data: staffList, error: staffError } = await supabase
+          .from('user_roles')
+          .select('email, role')
+          .in('role', ['admin', 'manager']);
+
+        if (!staffError && staffList && staffList.length > 0) {
+          // Buat list data notifikasi untuk setiap admin/manager yang ditemukan
+          const notificationsToInsert = staffList.map(staff => ({
+            user_email: staff.email, // Dinamis diambil dari database!
+            title: 'Pengajuan Request Baru',
+            message: `${formData.namaLengkap} mengajukan permintaan ${daftarBarang.length} barang.`,
+            type: 'request',
+            is_read: false
+          }));
+
+          // Masukkan ke tabel notifications
+          await supabase
+            .from('notifications')
+            .insert(notificationsToInsert);
+        }
+      } catch (notifError) {
+        console.error("Gagal mengirim notifikasi otomatis:", notifError.message);
+      }
+
       setCurrentStep(4);
 
     } catch (err) {
@@ -210,7 +238,7 @@ export default function AjukanPermintaan() {
       setIsExporting(false);
     }
   };
-
+  
   const handleDownloadPDF = () => {
     const element = printRef.current;
     if (!element) return;
@@ -350,7 +378,7 @@ export default function AjukanPermintaan() {
                             <div>
                               <div className="text-sm font-bold capitalize text-zinc-800">{barang.namaAset}</div>
                               <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
-                                ID: {barang.kodeAset} • <span className="text-emerald-700 font-semibold">Frekuensi 1 Tahun: {barang.autoFrequency}x req</span>
+                                ID: {barang.kodeAset}
                               </div>
                             </div>
                             
@@ -388,7 +416,6 @@ export default function AjukanPermintaan() {
                               value={barang.keterangan || ''}
                               onChange={(e) => handleKeteranganItemChange(idx, e.target.value)}
                               className="w-full text-xs border border-gray-300 rounded bg-gray-50 py-1.5 px-3 focus:outline-none focus:ring-1 focus:ring-[#4d8c6b]"
-                              required
                             />
                           </div>
                         </div>

@@ -7,7 +7,6 @@ export default function RiwayatPermintaan() {
   const [loading, setLoading] = useState(true);
   const [selectedLaporanId, setSelectedLaporanId] = useState(null);
 
-  // 🔥 Dependensi dikosongkan (constan) agar tidak error antar render
   useEffect(() => {
     fetchUserRequests();
   }, []);
@@ -15,6 +14,12 @@ export default function RiwayatPermintaan() {
   const fetchUserRequests = async () => {
     setLoading(true);
     try {
+      // 1. Ambil data akun yang sedang login
+      const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+      
+      // Ambil email user yang aktif sebagai kunci utama pencocokan
+      const activeEmail = activeUser?.email || activeUser?.mail || '';
+
       const { data, error } = await supabase
         .from('requests')
         .select(`
@@ -23,13 +28,16 @@ export default function RiwayatPermintaan() {
           jam,
           status,
           nama_pemohon,
+          email_pemohon,
+          keperluan,
           request_items (
             id,
             nama_barang,
             jumlah_diminta,
             jumlah_disetujui,
             prioritas,
-            remark
+            remark,
+            is_received
           )
         `)
         .order('created_at', { ascending: false });
@@ -37,16 +45,25 @@ export default function RiwayatPermintaan() {
       if (error) throw error;
 
       if (data) {
-        const formatted = data.map(req => {
+        // 🔥 FILTER PERMANEN: Hanya ambil riwayat yang 'email_pemohon'-nya sama dengan email user yang login
+        const filteredData = activeEmail 
+          ? data.filter(req => req.email_pemohon === activeEmail)
+          : [];
+
+        const formatted = filteredData.map(req => {
           let currentStatus = 'Pending';
           const dbStatus = req.status ? req.status.toLowerCase() : 'menunggu';
 
+          // Cek apakah SEMUA barang di tiket ini sudah di-klik diterima (is_received = true)
+          const allItemsReceived = req.request_items.length > 0 && req.request_items.every(i => i.is_received === true);
+
           if (dbStatus === 'menunggu' || dbStatus === 'menunggu manager') {
             currentStatus = 'Pending';
-          } else if (dbStatus === 'selesai') {
-            currentStatus = 'Approved'; 
           } else if (dbStatus === 'ditolak') {
             currentStatus = 'Rejected';
+          } else if (dbStatus === 'selesai') {
+            // Jika status dari manager Selesai, cek apakah barang sudah diambil user
+            currentStatus = allItemsReceived ? 'Completed' : 'Approved'; 
           }
 
           const itemPriorities = req.request_items.map(i => i.prioritas || 'Rendah');
@@ -58,15 +75,25 @@ export default function RiwayatPermintaan() {
             id: req.id,
             tgl: req.tanggal,
             pemohon: req.nama_pemohon,
+            keperluan: req.keperluan || '-',
             prioritasUtama: mainPriority,
             status: currentStatus, 
-            items: req.request_items.map(item => ({
-              idItem: item.id,
-              barang: item.nama_barang,
-              jumlah: item.jumlah_disetujui ?? item.jumlah_diminta,
-              prioritasItem: item.prioritas || 'Rendah',
-              statusItem: dbStatus === 'selesai' ? 'Approved' : (dbStatus === 'ditolak' ? 'Rejected' : 'Pending')
-            }))
+            items: req.request_items.map(item => {
+              // Menentukan status tiap baris item
+              let sItem = 'Pending';
+              if (dbStatus === 'ditolak') sItem = 'Rejected';
+              else if (dbStatus === 'selesai') {
+                sItem = item.is_received ? 'Received' : 'Approved'; // True = Received
+              }
+
+              return {
+                idItem: item.id,
+                barang: item.nama_barang,
+                jumlah: item.jumlah_disetujui ?? item.jumlah_diminta,
+                prioritasItem: item.prioritas || 'Rendah',
+                statusItem: sItem
+              };
+            })
           };
         });
 
@@ -79,25 +106,40 @@ export default function RiwayatPermintaan() {
     }
   };
 
-  const handleTerimaBarang = (laporanId, itemId) => {
-    setLaporanRiwayat(prevLaporan =>
-      prevLaporan.map(laporan => {
-        if (laporan.id === laporanId) {
-          const updatedItems = laporan.items.map(item =>
-            item.idItem === itemId ? { ...item, statusItem: 'Received' } : item
-          );
-          
-          const allDone = updatedItems.every(i => i.statusItem === 'Received' || i.statusItem === 'Rejected');
-          
-          return {
-            ...laporan,
-            items: updatedItems,
-            status: allDone ? 'Completed' : laporan.status 
-          };
-        }
-        return laporan;
-      })
-    );
+  // FUNGSI UPDATE PERMANEN KE DATABASE
+  const handleTerimaBarang = async (laporanId, itemId) => {
+    try {
+      // 1. Kirim update status ke tabel request_items di Supabase
+      const { error } = await supabase
+        .from('request_items')
+        .update({ is_received: true }) 
+        .eq('id', itemId);
+
+      if (error) throw error;
+
+      // 2. Jika sukses di database, update tampilan UI
+      setLaporanRiwayat(prevLaporan =>
+        prevLaporan.map(laporan => {
+          if (laporan.id === laporanId) {
+            const updatedItems = laporan.items.map(item =>
+              item.idItem === itemId ? { ...item, statusItem: 'Received' } : item
+            );
+            
+            const allDone = updatedItems.every(i => i.statusItem === 'Received' || i.statusItem === 'Rejected');
+            
+            return {
+              ...laporan,
+              items: updatedItems,
+              status: allDone ? 'Completed' : laporan.status 
+            };
+          }
+          return laporan;
+        })
+      );
+    } catch (error) {
+      console.error("Gagal konfirmasi terima barang:", error.message);
+      alert("Terjadi kesalahan saat mengkonfirmasi barang.");
+    }
   };
 
   const activeLaporan = laporanRiwayat.find(l => l.id === selectedLaporanId);
@@ -127,9 +169,9 @@ export default function RiwayatPermintaan() {
               </thead>
               <tbody className="text-xs font-semibold text-zinc-700 divide-y divide-zinc-100">
                 {loading ? (
-                  <tr><td colSpan="7" className="py-12 text-center text-zinc-400">Memuat riwayat dari database...</td></tr>
+                  <tr><td colSpan="6" className="py-12 text-center text-zinc-400">Memuat riwayat dari database...</td></tr>
                 ) : laporanRiwayat.length === 0 ? (
-                  <tr><td colSpan="7" className="py-12 text-center text-zinc-400">Belum ada riwayat permintaan ditemukan di database.</td></tr>
+                  <tr><td colSpan="6" className="py-12 text-center text-zinc-400">Belum ada riwayat permintaan ditemukan di database.</td></tr>
                 ) : (
                   laporanRiwayat.map((laporan) => (
                     <tr key={laporan.id} className="hover:bg-zinc-50/50 transition-colors">

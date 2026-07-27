@@ -1,6 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Menu, Bell, LogOut, ChevronDown, CheckCircle2, XCircle, PackagePlus, Clock, TriangleAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../../supabaseClient'; // Sesuaikan path ini dengan lokasimu
+
+// Helper untuk format waktu (contoh: "5 menit lalu")
+const formatTimeAgo = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now - date) / 1000);
+  
+  if (diffInSeconds < 60) return 'Baru saja';
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes} mnt lalu`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours} jam lalu`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `${diffInDays} hr lalu`;
+};
 
 export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
   const navigate = useNavigate();
@@ -10,53 +27,93 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
 
-  const initialNotifications = {
-    user: [
-      { id: 1, title: 'Permintaan Disetujui', message: 'Pengajuan Laptop Dell Latitude 5430 telah disetujui Manajer.', time: '5 menit lalu', type: 'approved', isRead: false },
-      { id: 2, title: 'Permintaan Ditolak', message: 'Pengajuan Kamera Sony Alpha A7 II ditolak.', time: '1 jam lalu', type: 'rejected', isRead: false },
-    ],
-    admin: [
-      { id: 1, title: 'History Permintaan Baru', message: 'Chico Diar telah mengambil MacBook Pro 14".', time: '10 menit lalu', type: 'history', isRead: false },
-      { id: 2, title: 'Permintaan Dicatat', message: 'Iwak Peyek mengajukan permintaan Kertas HVS A4.', time: '2 jam lalu', type: 'history', isRead: false },
-      { id: 3, title: 'STOK RENDAH', message: 'Kertas HVS A4 kurang dari standar aman (<5)', time: '2 menit lalu', type: 'alert', isRead: false },
-    ],
-    manager: [
-      { id: 1, title: 'Pengajuan Request Baru', message: 'Chico Diar (IT) mengajukan permintaan Laptop Dell Latitude 5430.', time: '2 menit lalu', type: 'request', isRead: false },
-      { id: 2, title: 'Pengajuan Request Baru', message: 'Rina Amelia (Finance) mengajukan permintaan Printer Canon.', time: '30 menit lalu', type: 'request', isRead: false },
-    ]
-  };
+  // State untuk Notifikasi & Profil Dinamis
+  const [notifications, setNotifications] = useState([]);
+  const [userProfile, setUserProfile] = useState({ name: 'User', email: '', avatar: null });
 
-  const [notifications, setNotifications] = useState(initialNotifications);
-  const currentNotifs = notifications[role] || [];
-  const unreadCount = currentNotifs.filter(n => !n.isRead).length;
-
-  // Fungsi tandai satu notifikasi sebagai sudah dibaca
-  const markAsRead = (id) => {
-    setNotifications(prev => ({
-      ...prev,
-      [role]: prev[role].map(n => n.id === id ? { ...n, isRead: true } : n)
-    }));
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(prev => ({
-      ...prev,
-      [role]: prev[role].map(n => ({ ...n, isRead: true }))
-    }));
-  };
+  // Hitung notif yang belum dibaca
+  const unreadCount = notifications.filter(n => !n.is_read).length;
 
   useEffect(() => {
+    fetchUserDataAndNotifs();
+
+    // Listener klik di luar dropdown
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setDropdownOpen(false);
       if (notifRef.current && !notifRef.current.contains(event.target)) setNotifOpen(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    
+    // Listener jika profil di-update dari EditProfil.jsx
+    window.addEventListener('profileUpdated', fetchUserDataAndNotifs);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('profileUpdated', fetchUserDataAndNotifs);
+    };
   }, []);
+
+  const fetchUserDataAndNotifs = async () => {
+    try {
+      const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+      const email = activeUser?.email || activeUser?.mail || '';
+      
+      if (!email) return;
+
+      // 1. Ambil Data Profil untuk Header Kanan Atas
+      const { data: profileData } = await supabase
+        .from('user_roles')
+        .select('username, avatar_url')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (profileData) {
+        setUserProfile({
+          name: profileData.username || 'Pengguna',
+          email: email,
+          avatar: profileData.avatar_url || null
+        });
+      }
+
+      // 2. Ambil Data Notifikasi dari Supabase (berdasarkan email user)
+      const { data: notifData, error: notifError } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_email', email)
+        .order('created_at', { ascending: false })
+        .limit(10); // Ambil 10 notifikasi terbaru
+
+      if (notifData && !notifError) {
+        setNotifications(notifData);
+      }
+    } catch (error) {
+      console.error('Error fetching header data:', error.message);
+    }
+  };
+
+  // Fungsi update status "dibaca" ke Supabase
+  const markAsRead = async (id) => {
+    // Update state lokal dulu supaya UI cepat
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    // Update ke database
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+  };
+
+  const markAllAsRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    await supabase.from('notifications').update({ is_read: true }).eq('user_email', userProfile.email);
+  };
 
   const handleLogout = () => {
     setDropdownOpen(false);
+    localStorage.removeItem('userProfile');
+    localStorage.removeItem('userSession');
     navigate('/');
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    return name.substring(0, 2).toUpperCase();
   };
 
   const renderNotifIcon = (type) => {
@@ -81,6 +138,7 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
       </div>
       
       <div className="flex items-center gap-4">
+        {/* DROPDOWN NOTIFIKASI */}
         <div className="relative" ref={notifRef}>
           <button 
             onClick={() => { setNotifOpen(!notifOpen); setDropdownOpen(false); }}
@@ -111,29 +169,28 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
               </div>
 
               <div className="max-h-72 overflow-y-auto divide-y divide-zinc-100">
-                {currentNotifs.length === 0 ? (
+                {notifications.length === 0 ? (
                   <div className="p-6 text-center text-zinc-400 text-xs font-medium">Tidak ada notifikasi baru</div>
                 ) : (
-                  currentNotifs.map((notif) => (
+                  notifications.map((notif) => (
                     <div 
                       key={notif.id}
                       onClick={() => markAsRead(notif.id)}
                       className={`p-3.5 flex gap-3 hover:bg-zinc-50 transition-colors cursor-pointer relative ${
-                        !notif.isRead ? (notif.type === 'alert' ? 'bg-red-50/60' : 'bg-emerald-50/30') : 'bg-white'
+                        !notif.is_read ? (notif.type === 'alert' ? 'bg-red-50/60' : 'bg-emerald-50/30') : 'bg-white'
                       }`}
                     >
-                      {/* Titik Indikator Baru */}
-                      {!notif.isRead && <div className="absolute left-1 top-5 w-1.5 h-1.5 bg-blue-500 rounded-full" />}
+                      {!notif.is_read && <div className="absolute left-1 top-5 w-1.5 h-1.5 bg-blue-500 rounded-full" />}
                       
                       {renderNotifIcon(notif.type)}
                       <div className="flex-1 space-y-0.5">
                         <div className="flex items-center justify-between">
-                          <p className={`text-xs font-bold ${notif.type === 'alert' ? 'text-red-700' : (!notif.isRead ? 'text-zinc-900' : 'text-zinc-400')}`}>
+                          <p className={`text-xs font-bold ${notif.type === 'alert' ? 'text-red-700' : (!notif.is_read ? 'text-zinc-900' : 'text-zinc-400')}`}>
                             {notif.title}
                           </p>
-                          <span className="text-[9px] text-zinc-400 font-medium">{notif.time}</span>
+                          <span className="text-[9px] text-zinc-400 font-medium">{formatTimeAgo(notif.created_at)}</span>
                         </div>
-                        <p className={`text-[11px] leading-snug ${notif.type === 'alert' ? 'text-red-600 font-medium' : (!notif.isRead ? 'text-zinc-600' : 'text-zinc-400')}`}>
+                        <p className={`text-[11px] leading-snug ${notif.type === 'alert' ? 'text-red-600 font-medium' : (!notif.is_read ? 'text-zinc-600' : 'text-zinc-400')}`}>
                           {notif.message}
                         </p>
                       </div>
@@ -145,17 +202,24 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
           )}
         </div>
 
+        {/* DROPDOWN PROFIL HEADER */}
         <div className="relative" ref={dropdownRef}>
           <button onClick={() => { setDropdownOpen(!dropdownOpen); setNotifOpen(false); }} className="flex items-center gap-2 cursor-pointer group focus:outline-none text-white">
-            <img src="https://ui-avatars.com/api/?name=Chico+Diar&background=random" className="h-8 w-8 rounded-full border border-white/40" alt="Profile" />
+            <div className="h-8 w-8 rounded-full border border-white/40 overflow-hidden bg-[#478767] flex items-center justify-center font-bold text-xs shadow-sm">
+              {userProfile.avatar ? (
+                <img src={userProfile.avatar} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                getInitials(userProfile.name)
+              )}
+            </div>
             <ChevronDown size={14} className={`text-white/70 transition-transform duration-300 ${dropdownOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {dropdownOpen && (
             <div className="absolute right-0 mt-2 w-44 bg-white border border-zinc-200 shadow-xl rounded-xl p-1.5 animate-in fade-in zoom-in-95 z-50 text-zinc-700">
-              <div className="px-3 py-1.5 border-b border-zinc-100 mb-1 select-none">
-                <p className="text-xs font-bold text-zinc-800">Chico Diar</p>
-                <p className="text-[10px] text-zinc-400 capitalize font-medium">{role}</p>
+              <div className="px-3 py-1.5 border-b border-zinc-100 mb-1 select-none flex flex-col truncate">
+                <span className="text-xs font-bold text-zinc-800 truncate">{userProfile.name}</span>
+                <span className="text-[10px] text-zinc-400 capitalize font-medium">{role}</span>
               </div>
               <button onClick={handleLogout} className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-lg cursor-pointer">
                 <LogOut size={15} />

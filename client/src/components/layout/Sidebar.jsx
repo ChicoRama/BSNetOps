@@ -1,10 +1,70 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, X } from 'lucide-react';
 import { menuConfig } from '../../config/menuConfig'; // Sesuaikan jalur impor di proyekmu
+import { supabase } from '../../../supabaseClient'; // Sesuaikan dengan lokasi supabaseClient kamu
 
 export default function Sidebar({ role, isOpen, setIsOpen, currentView, setCurrentView }) {
   // Ambil konfigurasi menu berdasarkan role aktif
   const currentMenu = menuConfig[role] || [];
+
+  // State untuk menyimpan data profil dari database
+  const [profile, setProfile] = useState({
+    name: 'Memuat...',
+    avatar: null
+  });
+
+  useEffect(() => {
+    fetchSidebarProfile();
+
+    // Event listener untuk mendeteksi perubahan di localStorage jika profil baru saja di-edit
+    const handleStorageChange = () => {
+      fetchSidebarProfile();
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  const fetchSidebarProfile = async () => {
+    try {
+      // Dapatkan email dari sesi login yang tersimpan
+      const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+      const email = activeUser?.email || activeUser?.mail || '';
+
+      if (!email) {
+        setProfile({ name: 'Guest', avatar: null });
+        return;
+      }
+
+      // Tarik data profil (nama dan foto) dari tabel 'user_roles' di Supabase
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('username, avatar_url')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setProfile({
+          name: data.username || 'Pengguna BSN',
+          avatar: data.avatar_url || null
+        });
+      }
+    } catch (error) {
+      console.error('Gagal memuat profil sidebar:', error.message);
+      setProfile({ name: 'Pengguna BSN', avatar: null });
+    }
+  };
+
+  // Fungsi untuk membuat inisial otomatis dari nama (Contoh: "Chico Diar" -> "CD")
+  const getInitials = (fullName) => {
+    if (!fullName || fullName === 'Memuat...') return '...';
+    const words = fullName.trim().split(' ');
+    if (words.length >= 2) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return fullName.substring(0, 2).toUpperCase();
+  };
 
   return (
     // DITAMBAHKAN print:hidden DI SINI
@@ -63,16 +123,22 @@ export default function Sidebar({ role, isOpen, setIsOpen, currentView, setCurre
           </nav>
         </div>
 
-        {/* BAGIAN BAWAH: PANEL PROFIL TERKUNCI*/}
+        {/* BAGIAN BAWAH: PANEL PROFIL DINAMIS (TERKONEKSI DATABASE) */}
         <div className="pt-4 border-t border-zinc-100 flex items-center justify-between gap-2 px-1 bg-white shrink-0 mt-4">
           <div className="flex items-center gap-3 overflow-hidden">
-            {/* Avatar Lingkaran */}
-            <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center font-bold text-emerald-600 shrink-0 text-xs shadow-sm">
-              CD
+            
+            {/* Avatar Dinamis */}
+            <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-100 flex items-center justify-center font-bold text-emerald-600 shrink-0 text-xs shadow-sm overflow-hidden">
+              {profile.avatar ? (
+                <img src={profile.avatar} alt="Profil" className="w-full h-full object-cover" />
+              ) : (
+                getInitials(profile.name)
+              )}
             </div>
-            {/* Label Informasi Pengguna */}
+            
+            {/* Label Informasi Pengguna Dinamis */}
             <div className="flex flex-col truncate">
-              <span className="text-xs font-bold text-zinc-800 truncate">Chico Diar</span>
+              <span className="text-xs font-bold text-zinc-800 truncate">{profile.name}</span>
               <span className="text-[10px] capitalize tracking-wider font-bold text-emerald-600 mt-0.5">{role}</span>
             </div>
           </div>
