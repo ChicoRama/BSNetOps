@@ -41,7 +41,7 @@ export default function AjukanPermintaan() {
         email: activeUser.email || ''
       }));
 
-      // 🔥 Sambung ke database Supabase tabel 'user_roles' untuk menarik data lengkap
+      // Sambung ke database Supabase tabel 'user_roles' untuk menarik data lengkap
       fetchUserProfileFromDB(identifier);
     }
   }, [isMultiItem]);
@@ -80,6 +80,7 @@ export default function AjukanPermintaan() {
       const isoOneYearAgo = oneYearAgo.toISOString();
 
       const processedItems = await Promise.all(assets.map(async (asset) => {
+        // 1. Cek frekuensi untuk prioritas otomatis
         const { count, error } = await supabase
           .from('request_items')
           .select('id, created_at', { count: 'exact', head: true })
@@ -87,6 +88,20 @@ export default function AjukanPermintaan() {
           .gte('created_at', isoOneYearAgo);
 
         if (error) throw error;
+
+        // 🔥 2. AMBIL STOK REAL-TIME DARI TABEL MASTER 'items'
+        let currentStock = 999; // Default jika gagal membaca
+        if (asset.kodeAset) {
+          const { data: itemData } = await supabase
+            .from('items')
+            .select('stock')
+            .eq('id', asset.kodeAset)
+            .maybeSingle();
+            
+          if (itemData) {
+            currentStock = parseInt(itemData.stock) || 0;
+          }
+        }
 
         const frequency = count || 0;
         let calculatedPriority = 'Rendah';
@@ -103,6 +118,7 @@ export default function AjukanPermintaan() {
           namaAset: asset.namaAset,
           kodeAset: asset.kodeAset,
           jumlah: asset.jumlah || 1,
+          stokMaksimal: currentStock, // Simpan sisa stok fisik di gudang
           prioritas: calculatedPriority, 
           autoFrequency: frequency,       
           keterangan: '' 
@@ -116,6 +132,7 @@ export default function AjukanPermintaan() {
         namaAset: asset.namaAset,
         kodeAset: asset.kodeAset,
         jumlah: asset.jumlah || 1,
+        stokMaksimal: asset.stock || 999, // Fallback stok
         prioritas: 'Rendah',
         keterangan: ''
       }));
@@ -130,9 +147,22 @@ export default function AjukanPermintaan() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // 🔥 FUNGSI VALIDASI QTY AGAR TIDAK MELEBIHI STOK
   const handleQtyChange = (index, val) => {
     const updated = [...daftarBarang];
-    updated[index].jumlah = parseInt(val) || 1;
+    let inputVal = parseInt(val) || 1;
+    const batasStok = updated[index].stokMaksimal;
+
+    // Jika user menginput lebih dari stok yang ada
+    if (inputVal > batasStok) {
+      inputVal = batasStok; // Paksa kembali ke angka maksimal stok
+      alert(`⚠️ Peringatan: Stok barang "${updated[index].namaAset}" di gudang hanya tersisa ${batasStok} unit!`);
+    }
+    
+    // Jangan biarkan angka di bawah 1
+    if (inputVal < 1) inputVal = 1;
+
+    updated[index].jumlah = inputVal;
     setDaftarBarang(updated);
   };
 
@@ -150,6 +180,14 @@ export default function AjukanPermintaan() {
         alert("Belum ada barang yang diajukan. Silakan pilih kembali dari katalog.");
         return;
       }
+      
+      // Tambahan validasi: pastikan tidak ada barang dengan stok 0 yang diajukan
+      const barangHabis = daftarBarang.find(b => b.stokMaksimal === 0);
+      if (barangHabis) {
+        alert(`Gagal: Stok barang "${barangHabis.namaAset}" sedang kosong (0 unit). Silakan hapus barang tersebut dari daftar pengajuan.`);
+        return;
+      }
+      
       setCurrentStep(3);
     }
   };
@@ -159,7 +197,7 @@ export default function AjukanPermintaan() {
     else if (currentStep === 3) setCurrentStep(2);
   };
 
-const handleSubmitFinal = async () => {
+  const handleSubmitFinal = async () => {
     setIsExporting(true); 
 
     try {
@@ -202,25 +240,22 @@ const handleSubmitFinal = async () => {
 
       if (itemsError) throw itemsError;
 
-      // 🔥 3. KIRIM NOTIFIKASI SECARA OTOMATIS & DINAMIS KE ADMIN/MANAGER
+      // 3. KIRIM NOTIFIKASI SECARA OTOMATIS & DINAMIS KE ADMIN/MANAGER
       try {
-        // Ambil semua email user yang rolenya 'admin' atau 'manager' langsung dari database
         const { data: staffList, error: staffError } = await supabase
           .from('user_roles')
           .select('email, role')
           .in('role', ['admin', 'manager']);
 
         if (!staffError && staffList && staffList.length > 0) {
-          // Buat list data notifikasi untuk setiap admin/manager yang ditemukan
           const notificationsToInsert = staffList.map(staff => ({
-            user_email: staff.email, // Dinamis diambil dari database!
+            user_email: staff.email, 
             title: 'Pengajuan Request Baru',
             message: `${formData.namaLengkap} mengajukan permintaan ${daftarBarang.length} barang.`,
             type: 'request',
             is_read: false
           }));
 
-          // Masukkan ke tabel notifications
           await supabase
             .from('notifications')
             .insert(notificationsToInsert);
@@ -368,7 +403,7 @@ const handleSubmitFinal = async () => {
                   
                   {isCheckingPriority ? (
                     <div className="py-12 text-center text-zinc-400 text-xs animate-pulse">
-                      ⚡ Menganalisis riwayat frekuensi permintaan barang tahunan...
+                      ⚡ Menghubungkan database dan mengecek ketersediaan stok gudang...
                     </div>
                   ) : (
                     <div className="border border-zinc-200 rounded-xl p-4 bg-zinc-50/50 space-y-4 mb-6 max-h-[350px] overflow-y-auto">
@@ -382,9 +417,9 @@ const handleSubmitFinal = async () => {
                               </div>
                             </div>
                             
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-zinc-500 font-medium">Prioritas Sistem:</span>
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                              <div className="flex items-center gap-1.5 hidden sm:flex">
+                                <span className="text-xs text-zinc-500 font-medium">Prioritas:</span>
                                 <span className={`px-2.5 py-1 rounded-md text-xs font-black border ${
                                   barang.prioritas === 'Tinggi' ? 'bg-red-50 text-red-600 border-red-200' : 
                                   barang.prioritas === 'Sedang' ? 'bg-yellow-50 text-yellow-600 border-yellow-200' : 
@@ -394,16 +429,22 @@ const handleSubmitFinal = async () => {
                                 </span>
                               </div>
 
-                              <div className="flex items-center gap-2">
-                                <label className="text-xs text-zinc-600 font-medium">Jumlah:</label>
+                              <div className="flex items-center gap-2 bg-zinc-50 p-1.5 rounded-lg border border-zinc-200">
+                                <label className="text-xs text-zinc-600 font-medium ml-1">Kuantitas:</label>
                                 <input 
                                   type="number" 
                                   min="1" 
+                                  max={barang.stokMaksimal} // 🔥 BATAS MAKSIMAL HTML
                                   value={barang.jumlah} 
                                   onChange={(e) => handleQtyChange(idx, e.target.value)} 
-                                  className="w-16 text-center text-xs border border-zinc-300 rounded py-1 px-1.5 focus:outline-[#4d8c6b]"
+                                  className={`w-16 text-center text-xs border rounded py-1 px-1.5 focus:outline-[#4d8c6b] ${barang.stokMaksimal === 0 ? 'bg-red-50 border-red-300' : 'border-zinc-300'}`}
                                   required
+                                  disabled={barang.stokMaksimal === 0}
                                 />
+                                {/* 🔥 INFO SISA STOK */}
+                                <span className={`text-[10px] font-bold ${barang.stokMaksimal === 0 ? 'text-red-500' : 'text-zinc-500'} pr-1`}>
+                                  / {barang.stokMaksimal} Stok
+                                </span>
                               </div>
                             </div>
                           </div>

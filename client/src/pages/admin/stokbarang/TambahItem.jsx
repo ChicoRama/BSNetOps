@@ -17,15 +17,12 @@ export default function TambahItem({ onClose, onSuccess }) {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Menangani saat file foto dipilih
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       setFormData({ ...formData, image: file });
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreview(reader.result);
-      };
+      reader.onloadend = () => setPreview(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -42,21 +39,18 @@ export default function TambahItem({ onClose, onSuccess }) {
 
       let imageUrl = null;
 
-      // 🔥 1. UPLOAD FOTO KE SUPABASE STORAGE (jika ada file yang dipilih)
       if (formData.image) {
         const file = formData.image;
         const fileExt = file.name.split('.').pop();
         const fileName = `${generatedId}-${Math.random()}.${fileExt}`;
         const filePath = `${fileName}`;
 
-        // Ganti 'items-bucket' dengan nama bucket storage Anda di Supabase
         const { error: uploadError } = await supabase.storage
           .from('items-bucket') 
           .upload(filePath, file);
 
         if (uploadError) throw uploadError;
 
-        // Ambil Public URL dari foto yang baru di-upload
         const { data: publicURLData } = supabase.storage
           .from('items-bucket')
           .getPublicUrl(filePath);
@@ -64,7 +58,7 @@ export default function TambahItem({ onClose, onSuccess }) {
         imageUrl = publicURLData.publicUrl;
       }
 
-      // 2. Insert data ke tabel 'items' dengan menyertakan URL gambar
+      // 1. Insert data ke tabel 'items'
       const { error: itemError } = await supabase
         .from('items')
         .insert([
@@ -76,14 +70,14 @@ export default function TambahItem({ onClose, onSuccess }) {
             location: formData.location || '-',
             date: formData.date,
             status: jumlahStok <= 3 ? 'Kritis' : 'Aman',
-            image: imageUrl, // Menyimpan URL gambar asli dari storage
+            image: imageUrl,
             deleted_at: null
           }
         ]);
 
       if (itemError) throw itemError;
 
-      // 3. Catat otomatis ke 'activity_logs' sebagai Barang Masuk
+      // 🔥 2. CATAT OTOMATIS KE 'activity_logs' SEBAGAI BARANG MASUK (BARU)
       const { error: logError } = await supabase
         .from('activity_logs')
         .insert([
@@ -102,7 +96,7 @@ export default function TambahItem({ onClose, onSuccess }) {
 
       if (logError) throw logError;
 
-      alert(`Sukses! Barang baru "${formData.name}" berhasil ditambahkan.`);
+      alert(`Sukses! Barang baru "${formData.name}" berhasil ditambahkan dan tercatat di Log Aktivitas.`);
       
       if (onSuccess) onSuccess();
       onClose();

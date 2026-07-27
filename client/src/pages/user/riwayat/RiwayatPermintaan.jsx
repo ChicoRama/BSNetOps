@@ -1,11 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Clock, CheckCircle2, XCircle, PackageCheck, Eye, ArrowLeft, FileText } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Clock, CheckCircle2, XCircle, PackageCheck, Eye, ArrowLeft, FileText, Download, MoreVertical, X as CloseIcon } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
+import TemplateDokumenA4 from '../permintaan/TemplateDokumenA4'; // Sesuaikan path relatif ke file TemplateDokumenA4.jsx kamu
 import { supabase } from '../../../../supabaseClient'; 
 
 export default function RiwayatPermintaan() {
+  const printRef = useRef();
   const [laporanRiwayat, setLaporanRiwayat] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLaporanId, setSelectedLaporanId] = useState(null);
+
+  // State untuk Preview Bon & Export PDF
+  const [showBonPreview, setShowBonPreview] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     fetchUserRequests();
@@ -14,10 +22,7 @@ export default function RiwayatPermintaan() {
   const fetchUserRequests = async () => {
     setLoading(true);
     try {
-      // 1. Ambil data akun yang sedang login
       const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
-      
-      // Ambil email user yang aktif sebagai kunci utama pencocokan
       const activeEmail = activeUser?.email || activeUser?.mail || '';
 
       const { data, error } = await supabase
@@ -29,7 +34,10 @@ export default function RiwayatPermintaan() {
           status,
           nama_pemohon,
           email_pemohon,
+          unit,
           keperluan,
+          is_diserahkan,
+          tanggal_diserahkan,
           request_items (
             id,
             nama_barang,
@@ -45,7 +53,6 @@ export default function RiwayatPermintaan() {
       if (error) throw error;
 
       if (data) {
-        // 🔥 FILTER PERMANEN: Hanya ambil riwayat yang 'email_pemohon'-nya sama dengan email user yang login
         const filteredData = activeEmail 
           ? data.filter(req => req.email_pemohon === activeEmail)
           : [];
@@ -54,7 +61,6 @@ export default function RiwayatPermintaan() {
           let currentStatus = 'Pending';
           const dbStatus = req.status ? req.status.toLowerCase() : 'menunggu';
 
-          // Cek apakah SEMUA barang di tiket ini sudah di-klik diterima (is_received = true)
           const allItemsReceived = req.request_items.length > 0 && req.request_items.every(i => i.is_received === true);
 
           if (dbStatus === 'menunggu' || dbStatus === 'menunggu manager') {
@@ -62,7 +68,6 @@ export default function RiwayatPermintaan() {
           } else if (dbStatus === 'ditolak') {
             currentStatus = 'Rejected';
           } else if (dbStatus === 'selesai') {
-            // Jika status dari manager Selesai, cek apakah barang sudah diambil user
             currentStatus = allItemsReceived ? 'Completed' : 'Approved'; 
           }
 
@@ -75,23 +80,28 @@ export default function RiwayatPermintaan() {
             id: req.id,
             tgl: req.tanggal,
             pemohon: req.nama_pemohon,
+            unit: req.unit || '',
+            statusDb: req.status, // Status asli dari DB untuk cek ACC
+            isDiserahkan: req.is_diserahkan || false,
+            tanggalDiserahkan: req.tanggal_diserahkan || '',
             keperluan: req.keperluan || '-',
             prioritasUtama: mainPriority,
             status: currentStatus, 
             items: req.request_items.map(item => {
-              // Menentukan status tiap baris item
               let sItem = 'Pending';
               if (dbStatus === 'ditolak') sItem = 'Rejected';
               else if (dbStatus === 'selesai') {
-                sItem = item.is_received ? 'Received' : 'Approved'; // True = Received
+                sItem = item.is_received ? 'Received' : 'Approved'; 
               }
 
               return {
                 idItem: item.id,
                 barang: item.nama_barang,
-                jumlah: item.jumlah_disetujui ?? item.jumlah_diminta,
+                jumlahDiminta: item.jumlah_diminta,
+                jumlahDisetujui: item.jumlah_disetujui ?? item.jumlah_diminta,
                 prioritasItem: item.prioritas || 'Rendah',
-                statusItem: sItem
+                statusItem: sItem,
+                remark: item.remark || ''
               };
             })
           };
@@ -106,10 +116,8 @@ export default function RiwayatPermintaan() {
     }
   };
 
-  // FUNGSI UPDATE PERMANEN KE DATABASE
   const handleTerimaBarang = async (laporanId, itemId) => {
     try {
-      // 1. Kirim update status ke tabel request_items di Supabase
       const { error } = await supabase
         .from('request_items')
         .update({ is_received: true }) 
@@ -117,7 +125,6 @@ export default function RiwayatPermintaan() {
 
       if (error) throw error;
 
-      // 2. Jika sukses di database, update tampilan UI
       setLaporanRiwayat(prevLaporan =>
         prevLaporan.map(laporan => {
           if (laporan.id === laporanId) {
@@ -142,7 +149,61 @@ export default function RiwayatPermintaan() {
     }
   };
 
+  const handleDownloadPDF = () => {
+    const element = printRef.current;
+    if (!element) return;
+    setIsExporting(true);
+
+    const opt = {
+      margin:      0,
+      filename:    `Bon_Barang_${activeLaporan?.id || 'BSN'}.pdf`,
+      image:       { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+    };
+
+    html2pdf().set(opt).from(element).save().then(() => {
+      setIsExporting(false);
+      setIsMenuOpen(false);
+    }).catch((err) => {
+      console.error("Error:", err);
+      setIsExporting(false);
+      setIsMenuOpen(false);
+    });
+  };
+
   const activeLaporan = laporanRiwayat.find(l => l.id === selectedLaporanId);
+
+  // Mapping data untuk TemplateDokumenA4 (Termasuk QR Code Admin & Manager)
+  const isApprovedByManager = activeLaporan?.statusDb?.toLowerCase() === 'selesai';
+  const isHandedOverByAdmin = activeLaporan?.isDiserahkan === true;
+
+  const qrAdmin = isHandedOverByAdmin ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Admin_Mas_Agus_ID:${activeLaporan?.id}` : null;
+  const qrManager = isApprovedByManager ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Atasan_ID:${activeLaporan?.id}` : null;
+
+  const mappedFormData = activeLaporan ? {
+    divisi: activeLaporan.unit,
+    alasanDibutuhkan: activeLaporan.keperluan,
+    namaLengkap: activeLaporan.pemohon,
+    status: activeLaporan.statusDb,
+    isApproved: isApprovedByManager,
+    adminName: 'Mas Agus',
+    managerName: 'Atasan / Manager',
+    qrAdmin: qrAdmin,
+    qrManager: qrManager
+  } : {};
+
+  const mappedDaftarBarang = activeLaporan ? activeLaporan.items.map(item => ({
+    namaAset: item.barang,
+    jumlahDiminta: item.jumlahDiminta,
+    jumlahDisetujui: item.jumlahDisetujui,
+    remark: item.remark
+  })) : [];
+
+  const mappedAdminData = activeLaporan ? {
+    isDiserahkan: activeLaporan.isDiserahkan,
+    tanggal: activeLaporan.tanggalDiserahkan || new Date().toLocaleDateString('id-ID')
+  } : {};
 
   return (
     <div className="w-full space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-zinc-800">
@@ -241,6 +302,14 @@ export default function RiwayatPermintaan() {
                   <p className="text-[11px] text-zinc-500 font-medium">{activeLaporan.tgl}</p>
                 </div>
               </div>
+
+              {/* TOMBOL LIHAT BON & DOWNLOAD PDF DI HALAMAN DETAIL */}
+              <button 
+                onClick={() => setShowBonPreview(true)}
+                className="px-4 py-2 bg-[#00664b] hover:bg-[#004d38] text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
+              >
+                <FileText size={14} /> Lihat Bon Permintaan
+              </button>
             </div>
 
             <div className="overflow-x-auto p-4">
@@ -299,6 +368,62 @@ export default function RiwayatPermintaan() {
           </div>
         )}
       </div>
+
+      {/* MODAL PREVIEW BON & DOWNLOAD PDF */}
+      {showBonPreview && activeLaporan && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-zinc-200 rounded-2xl shadow-2xl flex flex-col w-full max-w-4xl max-h-[95vh] overflow-hidden relative">
+            
+            <div className="px-6 py-4 bg-white border-b border-zinc-300 flex justify-between items-center z-20 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-800">Preview Bon Barang</h2>
+              
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <button 
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className="p-1.5 text-zinc-600 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <MoreVertical size={20} />
+                  </button>
+
+                  {isMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-40 bg-white border border-zinc-200 rounded-xl shadow-lg py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
+                      <button 
+                        onClick={handleDownloadPDF}
+                        disabled={isExporting}
+                        className="w-full px-4 py-2 text-left text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer"
+                      >
+                        <Download size={14} className="text-[#00664b]" />
+                        <span>{isExporting ? 'Mengunduh...' : 'Download PDF'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  onClick={() => { setShowBonPreview(false); setIsMenuOpen(false); }} 
+                  className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  <CloseIcon size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-8 flex justify-center bg-zinc-200">
+              <div className="shadow-lg border border-zinc-300 bg-white">
+                <TemplateDokumenA4 
+                  ref={printRef}
+                  formData={mappedFormData} 
+                  daftarBarang={mappedDaftarBarang} 
+                  adminData={mappedAdminData}
+                />
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

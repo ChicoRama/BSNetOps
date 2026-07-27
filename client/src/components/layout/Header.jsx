@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Menu, Bell, LogOut, ChevronDown, CheckCircle2, XCircle, PackagePlus, Clock, TriangleAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../../supabaseClient'; // Sesuaikan path ini dengan lokasimu
+import { supabase } from '../../../supabaseClient'; 
 
 // Helper untuk format waktu (contoh: "5 menit lalu")
 const formatTimeAgo = (dateString) => {
@@ -27,24 +27,19 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
 
-  // State untuk Notifikasi & Profil Dinamis
   const [notifications, setNotifications] = useState([]);
   const [userProfile, setUserProfile] = useState({ name: 'User', email: '', avatar: null });
 
-  // Hitung notif yang belum dibaca
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   useEffect(() => {
     fetchUserDataAndNotifs();
 
-    // Listener klik di luar dropdown
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setDropdownOpen(false);
       if (notifRef.current && !notifRef.current.contains(event.target)) setNotifOpen(false);
     }
     document.addEventListener('mousedown', handleClickOutside);
-    
-    // Listener jika profil di-update dari EditProfil.jsx
     window.addEventListener('profileUpdated', fetchUserDataAndNotifs);
 
     return () => {
@@ -75,28 +70,57 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
         });
       }
 
-      // 2. Ambil Data Notifikasi dari Supabase (berdasarkan email user)
+      // 2. Ambil Data Notifikasi dari Supabase
       const { data: notifData, error: notifError } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_email', email)
         .order('created_at', { ascending: false })
-        .limit(10); // Ambil 10 notifikasi terbaru
+        .limit(10);
 
-      if (notifData && !notifError) {
-        setNotifications(notifData);
+      let allNotifs = notifData && !notifError ? notifData : [];
+
+      // 🔥 3. JIKA ADMIN / MANAGER: Cek Stok Barang Kritis (<= 3)
+      if (role === 'admin' || role === 'manager') {
+        const { data: itemsData, error: itemsError } = await supabase
+          .from('items')
+          .select('id, name, stock')
+          .is('deleted_at', null);
+
+        if (itemsData && !itemsError) {
+          const criticalItems = itemsData.filter(item => (parseInt(item.stock) || 0) <= 3);
+          
+          if (criticalItems.length > 0) {
+            // Buat 1 notifikasi khusus berupa peringatan sistem (tidak disimpan di database notif, hanya muncul di UI)
+            const stockAlertNotif = {
+              id: 'system-alert-stock', // ID statis agar mudah dikenali
+              title: 'Peringatan Stok Menipis!',
+              message: `Terdapat ${criticalItems.length} item (termasuk ${criticalItems[0].name}) yang stoknya 3, unit. Segera lakukan restock.`,
+              type: 'alert',
+              is_read: false, 
+              created_at: new Date().toISOString()
+            };
+
+            // Sisipkan notifikasi peringatan ke barisan paling atas
+            allNotifs = [stockAlertNotif, ...allNotifs];
+          }
+        }
       }
+
+      setNotifications(allNotifs);
+
     } catch (error) {
       console.error('Error fetching header data:', error.message);
     }
   };
 
-  // Fungsi update status "dibaca" ke Supabase
   const markAsRead = async (id) => {
-    // Update state lokal dulu supaya UI cepat
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-    // Update ke database
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    
+    // Jangan kirim update ke Supabase jika yang diklik adalah notifikasi sistem (alert stok)
+    if (id !== 'system-alert-stock') {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
+    }
   };
 
   const markAllAsRead = async () => {

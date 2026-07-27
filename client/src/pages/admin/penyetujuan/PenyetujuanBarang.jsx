@@ -21,7 +21,7 @@ export default function PenyetujuanBarang() {
     fetchRequestsFromSupabase();
   }, []);
 
-const fetchRequestsFromSupabase = async () => {
+  const fetchRequestsFromSupabase = async () => {
     setLoading(true);
     try {
       // 1. Ambil data requests beserta request_items
@@ -50,7 +50,7 @@ const fetchRequestsFromSupabase = async () => {
       if (error) throw error;
 
       if (data) {
-        // 2. Ambil seluruh data dari tabel master 'items' sekaligus untuk dicocokkan di JavaScript (jauh lebih aman & akurat)
+        // 2. Ambil seluruh data dari tabel master 'items' sekaligus untuk dicocokkan di JavaScript
         const { data: allMasterItems, error: masterError } = await supabase
           .from('items')
           .select('*');
@@ -59,21 +59,17 @@ const fetchRequestsFromSupabase = async () => {
           console.error("Gagal mengambil master items:", masterError.message);
         }
 
-        console.log("Master Items dari Database:", allMasterItems); // Cek konsol browser untuk melihat kolom tabel items kamu
-
         const formattedData = data.map(req => {
           const formattedItems = req.request_items.map(item => {
             let latestStock = 0;
 
             if (allMasterItems && allMasterItems.length > 0) {
-              // Cocokkan berdasarkan nama barang (diabaikan huruf besar/kecil) atau kode barang
               const matchedItem = allMasterItems.find(m => 
                 (item.kode_barang && (m.id == item.kode_barang || m.kode_barang == item.kode_barang || m.kode_item == item.kode_barang)) ||
                 (item.nama_barang && m.name && m.name.trim().toLowerCase() === item.nama_barang.trim().toLowerCase())
               );
 
               if (matchedItem) {
-                // Ambil nilai stok dari kolom apa pun yang tersedia di tabel items ('stock', 'stok', atau 'jumlah')
                 latestStock = matchedItem.stock ?? matchedItem.stok ?? matchedItem.jumlah ?? 0;
               }
             }
@@ -122,11 +118,22 @@ const fetchRequestsFromSupabase = async () => {
     setIsModalOpen(true);
   };
 
+  // 🔥 FUNGSI UPDATE QTY DENGAN BATASAN OTOMATIS
   const handleQtyChange = (idItem, newQty) => {
     setSelectedRequest((prev) => {
-      const updatedItems = prev.items.map(item => 
-        item.idItem === idItem ? { ...item, jmlDisetujui: parseInt(newQty) || 0 } : item
-      );
+      const updatedItems = prev.items.map(item => {
+        if (item.idItem === idItem) {
+          let val = parseInt(newQty) || 0;
+          // Batas maksimal adalah nilai terkecil antara Jumlah Diminta dan Stok Gudang
+          const maxAllowed = Math.min(item.jmlDiminta, item.stokGudang);
+          
+          if (val > maxAllowed) val = maxAllowed;
+          if (val < 0) val = 0;
+
+          return { ...item, jmlDisetujui: val };
+        }
+        return item;
+      });
       return { ...prev, items: updatedItems };
     });
   };
@@ -140,18 +147,24 @@ const fetchRequestsFromSupabase = async () => {
     });
   };
 
-  // 🔥 FUNGSI SETUJUI & TERUSKAN KE MANAGER
   const handleApproveAndHandover = async () => {
+    // Validasi Ganda (Mencegah submit jika data diretas/error)
     const isExceedingStock = selectedRequest.items.some(item => item.jmlDisetujui > item.stokGudang);
+    const isExceedingRequest = selectedRequest.items.some(item => item.jmlDisetujui > item.jmlDiminta);
+    
     if (isExceedingStock) {
       alert("Gagal: Ada barang yang jumlah disetujuinya melebihi stok gudang saat ini!");
+      return;
+    }
+    
+    if (isExceedingRequest) {
+      alert("Gagal: Jumlah disetujui tidak boleh melebihi jumlah yang diminta pemohon!");
       return;
     }
 
     const todayStr = new Date().toLocaleDateString('id-ID');
 
     try {
-      // 1. Update status header di tabel 'requests' menjadi 'Menunggu Manager'
       const { error: reqError } = await supabase
         .from('requests')
         .update({ 
@@ -163,7 +176,6 @@ const fetchRequestsFromSupabase = async () => {
 
       if (reqError) throw reqError;
 
-      // 2. Update detail item (jumlah disetujui & remark) di tabel 'request_items'
       for (const item of selectedRequest.items) {
         await supabase
           .from('request_items')
@@ -209,10 +221,25 @@ const fetchRequestsFromSupabase = async () => {
     });
   };
 
+  const isApprovedByManager = selectedRequest?.status?.toLowerCase() === 'selesai';
+  const isHandedOverByAdmin = selectedRequest?.isDiserahkan === true;
+  
+  // Deteksi apakah status masih "menunggu" agar tombol approve bisa muncul
+  const isPendingApproval = selectedRequest?.status?.toLowerCase() === 'menunggu';
+
+  const qrAdmin = isHandedOverByAdmin ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Admin_Mas_Agus_ID:${selectedRequest?.id}` : null;
+  const qrManager = isApprovedByManager ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Atasan_ID:${selectedRequest?.id}` : null;
+
   const mappedFormData = selectedRequest ? {
     divisi: selectedRequest.unit,
     alasanDibutuhkan: selectedRequest.keteranganPemohon,
-    namaLengkap: selectedRequest.pemohon
+    namaLengkap: selectedRequest.pemohon,
+    status: selectedRequest.status,
+    isApproved: isApprovedByManager,
+    adminName: 'Mas Agus',
+    managerName: 'Atasan / Manager',
+    qrAdmin: qrAdmin,
+    qrManager: qrManager,
   } : {};
 
   const mappedDaftarBarang = selectedRequest ? selectedRequest.items.map(item => ({
@@ -373,7 +400,6 @@ const fetchRequestsFromSupabase = async () => {
                           <div className="text-[10px] text-zinc-500 font-mono mt-0.5">{item.kodeBarang}</div>
                         </td>
                         <td className="p-3 text-center">
-                          {/* 🔥 MENAMPILKAN STOK TERBARU LANGSUNG DARI DATABASE MASTER BARANG */}
                           <span className={`inline-flex items-center justify-center min-w-[32px] px-2 py-1 rounded-md text-xs font-bold border ${item.stokGudang > 0 ? 'bg-[#e7f0ec] text-[#00664b] border-[#00664b]/20' : 'bg-red-50 text-red-600 border-red-200'}`}>
                             {item.stokGudang}
                           </span>
@@ -383,10 +409,12 @@ const fetchRequestsFromSupabase = async () => {
                           <input 
                             type="number" 
                             min="0"
-                            max={item.stokGudang}
+                            // 🔥 HTML attribute MAX juga dikunci agar tidak melebihi permintaan
+                            max={Math.min(item.jmlDiminta, item.stokGudang)}
                             value={item.jmlDisetujui}
                             onChange={(e) => handleQtyChange(item.idItem, e.target.value)}
-                            className="w-full px-3 py-1.5 border border-zinc-300 rounded-lg text-sm text-center bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#00664b]/40"
+                            disabled={!isPendingApproval} 
+                            className="w-full px-3 py-1.5 border border-zinc-300 rounded-lg text-sm text-center bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#00664b]/40 disabled:opacity-60 disabled:bg-zinc-200"
                           />
                         </td>
                         <td className="p-3">
@@ -395,7 +423,8 @@ const fetchRequestsFromSupabase = async () => {
                             placeholder="Alasan penyesuaian..."
                             value={item.remark}
                             onChange={(e) => handleRemarkChange(item.idItem, e.target.value)}
-                            className="w-full px-3 py-1.5 border border-zinc-300 rounded-lg text-xs bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#00664b]/40"
+                            disabled={!isPendingApproval} 
+                            className="w-full px-3 py-1.5 border border-zinc-300 rounded-lg text-xs bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#00664b]/40 disabled:opacity-60 disabled:bg-zinc-200"
                           />
                         </td>
                       </tr>
@@ -406,19 +435,22 @@ const fetchRequestsFromSupabase = async () => {
             </div>
 
             <div className="px-6 py-4 border-t border-zinc-200 bg-white flex justify-between items-center rounded-b-2xl">
-              <div className="flex space-x-3">
+              <div className="flex space-x-3 w-full justify-end">
                 <button 
                   onClick={() => setShowBonPreview(true)}
                   className="px-5 py-2 border border-[#00664b] text-[#00664b] bg-white hover:bg-[#e7f0ec] font-semibold rounded-lg text-sm transition-colors shadow-sm cursor-pointer"
                 >
                   Lihat Bon Permintaan
                 </button>
-                <button 
-                  onClick={handleApproveAndHandover}
-                  className="px-5 py-2 bg-[#00664b] hover:bg-[#00553e] text-white font-semibold rounded-lg text-sm transition-colors shadow-md flex items-center justify-center cursor-pointer"
-                >
-                  Setujui & Teruskan ke Manager
-                </button>
+                
+                {isPendingApproval && (
+                  <button 
+                    onClick={handleApproveAndHandover}
+                    className="px-5 py-2 bg-[#00664b] hover:bg-[#00553e] text-white font-semibold rounded-lg text-sm transition-colors shadow-md flex items-center justify-center cursor-pointer"
+                  >
+                    Setujui & Teruskan ke Manager
+                  </button>
+                )}
               </div>
             </div>
 

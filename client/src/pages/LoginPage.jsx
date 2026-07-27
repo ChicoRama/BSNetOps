@@ -7,6 +7,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // 🔥 Tambahan untuk deteksi loading
 
   const [form, setForm] = useState({
     username: "", 
@@ -24,12 +25,10 @@ export default function LoginPage() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-
     setForm({
       ...form,
       [name]: type === "checkbox" ? checked : value,
     });
-
     setError({
       ...error,
       [name]: "",
@@ -39,6 +38,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    if (isLoading) return; // Cegah tombol diklik berkali-kali
 
     let newError = { username: "", password: "", general: "" };
 
@@ -48,60 +48,73 @@ export default function LoginPage() {
     setError(newError);
     if (newError.username || newError.password) return;
 
+    setIsLoading(true); // Tombol berubah jadi loading...
     const inputEmail = form.username.toLowerCase();
 
-    // 🔥 1. CEK STATUS PENANGGUHAN AKUN DI TABEL user_roles SEBELUM LOGIN
-    const { data: roleData, error: roleError } = await supabase
-      .from('user_roles')
-      .select('role, is_suspended')
-      .eq('email', inputEmail)
-      .maybeSingle(); 
+    try {
+      // 1. CEK STATUS PENANGGUHAN AKUN DI TABEL user_roles SEBELUM LOGIN
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role, is_suspended')
+        .eq('email', inputEmail)
+        .maybeSingle(); 
 
-    // Jika akun terdeteksi ditangguhkan (is_suspended = true), hentikan proses login
-    if (roleData && roleData.is_suspended === true) {
-      alert("❌ AKUN DITANGGUHKAN!\n\nAnda tidak memiliki akses untuk masuk ke dalam sistem. Silakan hubungi Administrator Gudang untuk informasi lebih lanjut.");
-      return; 
-    }
+      // Jika akun terdeteksi ditangguhkan (is_suspended = true), hentikan proses login
+      if (roleData && roleData.is_suspended === true) {
+        alert("❌ AKUN DITANGGUHKAN!\n\nAnda tidak memiliki akses untuk masuk ke dalam sistem. Silakan hubungi Administrator Gudang untuk informasi lebih lanjut.");
+        setIsLoading(false);
+        return; 
+      }
 
-    // 2. PROSES LOGIN KE SUPABASE AUTH (Hanya berjalan jika tidak disuspend)
-    const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
-      email: inputEmail, 
-      password: form.password,
-    });
+      // 2. PROSES LOGIN KE SUPABASE AUTH (Hanya berjalan jika tidak disuspend)
+      const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
+        email: inputEmail, 
+        password: form.password,
+      });
 
-    if (supabaseError) {
-      setError({ ...newError, general: "Email atau password salah" });
-      return;
-    }
+      if (supabaseError) {
+        setError({ ...newError, general: "Email atau password salah" });
+        setIsLoading(false);
+        return;
+      }
 
-    // 3. SIMPAN TOKEN & PROFIL DASAR KE LOCALSTORAGE
-    if (data.session) {
-      localStorage.setItem("token", data.session.access_token);
-      localStorage.setItem("access_token", data.session.access_token);
+      // 3. TENTUKAN ROLE
+      let userRole = "user"; 
+      if (roleData && roleData.role) {
+        userRole = roleData.role.toLowerCase(); 
+      }
 
-      const profileInfo = {
-        email: inputEmail,
-        namaLengkap: data.user?.user_metadata?.full_name || inputEmail.split('@')[0],
-        nipPegawai: "",
-        divisi: "",
-        jabatan: "",
-        noTelepon: ""
-      };
-      localStorage.setItem("userProfile", JSON.stringify(profileInfo));
-    }
+      // 4. SIMPAN TOKEN & PROFIL DASAR BESERTA ROLE KE LOCALSTORAGE
+      if (data.session) {
+        localStorage.setItem("token", data.session.access_token);
+        localStorage.setItem("access_token", data.session.access_token);
 
-    // 4. REDIRECT BERDASARKAN ROLE
-    let userRole = "user"; 
-    if (roleData && roleData.role) {
-      userRole = roleData.role.toLowerCase(); 
-    }
+        const profileInfo = {
+          email: inputEmail,
+          namaLengkap: data.user?.user_metadata?.full_name || inputEmail.split('@')[0],
+          nipPegawai: "",
+          divisi: "",
+          role: userRole,     // 🔥 Role berhasil disimpan!
+          jabatan: userRole,  // 🔥 Role berhasil disimpan!
+          noTelepon: ""
+        };
+        localStorage.setItem("userProfile", JSON.stringify(profileInfo));
+      }
 
-    if (userRole === "admin") {
-      navigate("/admin");
-    } else if (userRole === "manager") {
-      navigate("/manager");
-    } else {
-      navigate("/user");
+      // 5. REDIRECT BERDASARKAN ROLE
+      if (userRole === "admin") {
+        navigate("/admin");
+      } else if (userRole === "manager") {
+        navigate("/manager");
+      } else {
+        navigate("/user");
+      }
+
+    } catch (err) {
+      console.error("Terjadi kesalahan sistem saat login:", err);
+      setError({ ...newError, general: "Terjadi kesalahan koneksi ke server." });
+    } finally {
+      setIsLoading(false); // Matikan loading
     }
   };
 
@@ -237,9 +250,10 @@ export default function LoginPage() {
               {/* LOGIN BUTTON */}
               <button
                 type="submit"
-                className="w-full cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition hover:-translate-y-1 hover:bg-[#004d3a]"
+                disabled={isLoading}
+                className="w-full cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition hover:-translate-y-1 hover:bg-[#004d3a] disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                Log in
+                {isLoading ? "Memproses..." : "Log in"}
               </button>
 
             </form>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
@@ -25,6 +25,43 @@ import ActivityLog from './pages/manager/actlog/ActivityLog.jsx';
 import Aset from './pages/user/aset/Aset';
 import AjukanPermintaan from './pages/user/permintaan/AjukanPermintaan';
 import RiwayatPermintaan from './pages/user/riwayat/RiwayatPermintaan';
+
+// =====================================================================
+// 🔒 KOMPONEN PROTEKSI RUTE (ROUTE GUARD)
+// Memastikan hanya role yang diizinkan yang bisa mengakses rute tertentu
+// =====================================================================
+const ProtectedRoute = ({ allowedRoles }) => {
+  const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+  
+  // Jika tidak ada user yang login sama sekali, tendang ke halaman login
+  if (!activeUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // 🔥 UPDATE: Cari role dari berbagai kemungkinan key yang ada di database/localStorage
+  const userRole = (
+    activeUser.role || 
+    activeUser.jabatan || 
+    activeUser.level || 
+    activeUser.tipe || 
+    activeUser.type || 
+    'user'
+  ).toLowerCase();
+
+  // Jika role user saat ini ada di dalam daftar allowedRoles, izinkan masuk (Outlet)
+  if (allowedRoles.includes(userRole)) {
+    return <Outlet />;
+  }
+
+  // Jika rolenya TIDAK SESUAI (misal user mau ke /admin), kembalikan ke dashboard masing-masing
+  if (userRole === 'admin' || userRole === 'head unit') {
+    return <Navigate to="/admin" replace />;
+  } else if (userRole === 'manager') {
+    return <Navigate to="/manager" replace />;
+  } else {
+    return <Navigate to="/user" replace />;
+  }
+};
 
 function DashboardLayout({ role, currentView, setCurrentView, children }) {
   const [isOpen, setIsOpen] = useState(() => JSON.parse(localStorage.getItem('sidebarOpen')) ?? true);
@@ -58,46 +95,57 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* ================= ROUTE PUBLIK ================= */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
         {/* ================= ROUTE ROLE: ADMIN ================= */}
-        <Route path="/admin" element={
-          <DashboardLayout role="admin" currentView={currentView} setCurrentView={setCurrentView}>
-            {currentView === 'dashboard' && <AdminDashboard />}
-            {currentView === 'stok-barang' && <StokBarang role="admin" />}
-            {currentView === 'manajemen-user' && <UserManagement />}
-            {currentView === 'kategori-barang' && <KategoriBarang />}
-            {currentView === 'log-aktifitas' && <LogAktifitas />}
-            {currentView === 'edit-profil' && <EditProfil />}
-            {currentView === 'penyetujuan-barang' && <PenyetujuanBarang/>}
-          </DashboardLayout>
-        } />
+        {/* 🔒 Hanya bisa diakses oleh 'admin' atau 'head unit' */}
+        <Route element={<ProtectedRoute allowedRoles={['admin', 'head unit']} />}>
+          <Route path="/admin" element={
+            <DashboardLayout role="admin" currentView={currentView} setCurrentView={setCurrentView}>
+              {currentView === 'dashboard' && <AdminDashboard />}
+              {currentView === 'stok-barang' && <StokBarang role="admin" />}
+              {currentView === 'manajemen-user' && <UserManagement />}
+              {currentView === 'kategori-barang' && <KategoriBarang />}
+              {currentView === 'log-aktifitas' && <LogAktifitas />}
+              {currentView === 'edit-profil' && <EditProfil />}
+              {currentView === 'penyetujuan-barang' && <PenyetujuanBarang/>}
+            </DashboardLayout>
+          } />
+        </Route>
 
         {/* ================= ROUTE ROLE: MANAGER ================= */}
-        <Route path="/manager" element={
-          <DashboardLayout role="manager" currentView={currentView} setCurrentView={setCurrentView}>
-            {currentView === 'dashboard' && <ManagerDashboard />}
-            {currentView === 'approval-request' && <ApprovalRequest />}
-            {currentView === 'edit-profil' && <EditProfil />}
-            {currentView === 'activity-log' && <ActivityLog/>}
-          </DashboardLayout>
-        } />
+        {/* 🔒 Hanya bisa diakses oleh 'manager' */}
+        <Route element={<ProtectedRoute allowedRoles={['manager']} />}>
+          <Route path="/manager" element={
+            <DashboardLayout role="manager" currentView={currentView} setCurrentView={setCurrentView}>
+              {currentView === 'dashboard' && <ManagerDashboard />}
+              {currentView === 'approval-request' && <ApprovalRequest />}
+              {currentView === 'edit-profil' && <EditProfil />}
+              {currentView === 'activity-log' && <ActivityLog/>}
+            </DashboardLayout>
+          } />
+        </Route>
 
         {/* ================= ROUTE ROLE: USER ================= */}
-        <Route path="/user" element={
-          <DashboardLayout role="user" currentView={currentView} setCurrentView={setCurrentView}>
-            {/* 💡 FIX: setCurrentView dioper ke UserDashboard agar tombol Aksi Cepat bisa diklik */}
-            {currentView === 'dashboard' && <UserDashboard setCurrentView={setCurrentView} />}
-            
-            {currentView === 'aset' && <Aset setCurrentView={setCurrentView} />}
-            {currentView === 'ajukan-permintaan' && <AjukanPermintaan />}
-            {currentView === 'riwayat-permintaan' && <RiwayatPermintaan />}
-            {currentView === 'edit-profil' && <EditProfil />}
-          </DashboardLayout>
-        } />
+        {/* 🔒 Hanya bisa diakses oleh 'user' */}
+        <Route element={<ProtectedRoute allowedRoles={['user']} />}>
+          <Route path="/user" element={
+            <DashboardLayout role="user" currentView={currentView} setCurrentView={setCurrentView}>
+              {/* 💡 FIX: setCurrentView dioper ke UserDashboard agar tombol Aksi Cepat bisa diklik */}
+              {currentView === 'dashboard' && <UserDashboard setCurrentView={setCurrentView} />}
+              
+              {currentView === 'aset' && <Aset setCurrentView={setCurrentView} />}
+              {currentView === 'ajukan-permintaan' && <AjukanPermintaan />}
+              {currentView === 'riwayat-permintaan' && <RiwayatPermintaan />}
+              {currentView === 'edit-profil' && <EditProfil />}
+            </DashboardLayout>
+          } />
+        </Route>
 
+        {/* Jika mengetik URL asal-asalan, kembalikan ke landing page */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

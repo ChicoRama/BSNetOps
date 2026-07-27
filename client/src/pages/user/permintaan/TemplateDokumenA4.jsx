@@ -99,39 +99,38 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [], admin
         <tbody>
           <tr className="h-[100px]">
             
-            {/* 1. KOLOM GA (Admin / Mas Agus) */}
+            {/* 1. KOLOM GA (Dikosongkan) */}
             <td className="border-2 border-black align-bottom pb-2">
               <div className="flex flex-col items-center justify-end h-full w-full">
-                {formData?.isApproved && formData?.qrAdmin ? (
-                  <img 
-                    src={formData.qrAdmin} 
-                    alt="QR GA" 
-                    className="w-16 h-14 mb-1 object-contain opacity-90"
-                    crossOrigin="anonymous"
-                  />
-                ) : (
-                  <span className="text-[10px] text-zinc-300 italic mb-4">Belum di-ACC</span>
-                )}
-                <span className="capitalize font-bold text-xs mt-1 underline">
-                  {formData?.adminName || 'Mas Agus'}
+                <span className="font-bold text-xs mt-1">
+                  (_______________)
                 </span>
               </div>
             </td>
 
-            {/* 2. KOLOM BARANG TELAH DIKELUARKAN OLEH */}
+            {/* 2. KOLOM BARANG TELAH DIKELUARKAN OLEH (Admin / Mas Agus) */}
             <td className="border-2 border-black align-bottom pb-2">
               <div className="flex flex-col items-center justify-end h-full w-full">
-                {adminData?.isDiserahkan && (
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`Released by Mas Agus pada ${adminData.tanggal}`)}`} 
-                    alt="QR Admin Agus" 
-                    className="w-16 h-14 mb-1 object-contain opacity-90"
-                    crossOrigin="anonymous"
-                  />
+                {formData?.qrAdmin ? (
+                  <>
+                    <img 
+                      src={formData.qrAdmin} 
+                      alt="QR Admin Agus" 
+                      className="w-16 h-14 mb-1 object-contain opacity-90"
+                      crossOrigin="anonymous"
+                    />
+                    <span className="capitalize font-bold text-xs mt-1 underline">
+                      {formData?.adminName || 'Mas Agus'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[10px] text-zinc-300 italic mb-4">Belum di-ACC</span>
+                    <span className="font-bold text-xs mt-1">
+                      (_______________)
+                    </span>
+                  </>
                 )}
-                <span className="capitalize font-bold text-xs mt-1 underline">
-                  {adminData?.isDiserahkan ? 'Agus' : '(_______________)'}
-                </span>
               </div>
             </td>
 
@@ -139,22 +138,29 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [], admin
             <td className="border-2 border-black align-bottom pb-2">
               <div className="flex flex-col items-center justify-end h-full w-full">
                 {formData?.isApproved && formData?.qrManager ? (
-                  <img 
-                    src={formData.qrManager} 
-                    alt="QR Manager" 
-                    className="w-16 h-14 mb-1 object-contain opacity-90"
-                    crossOrigin="anonymous"
-                  />
+                  <>
+                    <img 
+                      src={formData.qrManager} 
+                      alt="QR Manager" 
+                      className="w-16 h-14 mb-1 object-contain opacity-90"
+                      crossOrigin="anonymous"
+                    />
+                    <span className="capitalize font-bold text-xs mt-1 underline">
+                      {formData?.managerName || 'Manager'}
+                    </span>
+                  </>
                 ) : (
-                  <span className="text-[10px] text-zinc-300 italic mb-4">Belum di-ACC</span>
+                  <>
+                    <span className="text-[10px] text-zinc-300 italic mb-4">Belum di-ACC</span>
+                    <span className="font-bold text-xs mt-1">
+                      (_______________)
+                    </span>
+                  </>
                 )}
-                <span className="capitalize font-bold text-xs mt-1 underline">
-                  {formData?.managerName || 'Manager'}
-                </span>
               </div>
             </td>
             
-            {/* 4. KOLOM PEMOHON */}
+            {/* 4. KOLOM PEMOHON (User) */}
             <td className="border-2 border-black align-bottom pb-2">
               <div className="flex flex-col items-center justify-end h-full w-full">
                 {formData?.namaLengkap && (

@@ -27,30 +27,55 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
     }
   }, [itemData]);
 
-  // FUNGSI UPDATE DATA KE SUPABASE
   const handleUpdate = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      const stokBaru = parseInt(formData.stock) || 0;
+      const stokLama = parseInt(itemData.stock) || 0;
+      const selisihStok = stokBaru - stokLama;
+
       const { error } = await supabase
         .from('items')
         .update({
           name: formData.name,
           category: formData.category,
-          stock: parseInt(formData.stock) || 0,
+          stock: stokBaru,
           location: formData.location || '-',
           date: formData.date,
-          status: parseInt(formData.stock) <= 3 ? 'Kritis' : 'Aman'
+          status: stokBaru <= 3 ? 'Kritis' : 'Aman'
         })
         .eq('id', formData.id);
 
       if (error) throw error;
 
+      if (selisihStok > 0) {
+        const { error: logError } = await supabase
+          .from('activity_logs')
+          .insert([
+            {
+              transaction_id: `UPD-${formData.id}-${Date.now().toString().slice(-4)}`,
+              requester: 'Admin',
+              item_name: formData.name,
+              qty: selisihStok,
+              type: 'Masuk',
+              status: 'Selesai',
+              manager_status: 'Approved',
+              admin_status: 'Selesai',
+              date: new Date().toISOString().split('T')[0]
+            }
+          ]);
+
+        if (logError) {
+          console.error('Gagal mencatat log aktivitas:', logError.message);
+        }
+      }
+
       alert(`Sukses! Data item ${formData.id} berhasil diperbarui.`);
       
-      if (onSuccess) onSuccess(); // Refresh tabel di halaman utama
-      onClose(); // Tutup modal edit
+      if (onSuccess) onSuccess(); 
+      onClose(); 
 
     } catch (error) {
       console.error('Gagal memperbarui item ke Supabase:', error.message);

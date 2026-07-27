@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { supabase } from '../../supabaseClient';
+
 const COLORS = ['#00664b', '#3B82F6', '#FFBF00', '#8B5CF6', '#EC4899', '#14B8A6'];
 
 export default function AdminDashboard({ role = 'admin' }) {
@@ -27,22 +28,20 @@ export default function AdminDashboard({ role = 'admin' }) {
       if (itemsError) throw itemsError;
 
       let totalStock = 0;
-      let totalMasuk = 0;
       const categoryMap = {};
 
       if (itemsData) {
         itemsData.forEach(item => {
           const qty = parseInt(item.stock) || 0;
           totalStock += qty;
-          totalMasuk += qty;
 
           const cat = item.category || 'Lainnya';
           if (!categoryMap[cat]) categoryMap[cat] = 0;
           categoryMap[cat] += qty;
         });
 
+        // 🔥 Set Total Barang Gudang sesuai dengan sisa stok fisik saat ini
         setTotalBarang(totalStock);
-        setBarangMasuk(totalMasuk);
 
         const formattedCategoryData = Object.keys(categoryMap).map(catName => ({
           name: catName,
@@ -62,7 +61,7 @@ export default function AdminDashboard({ role = 'admin' }) {
       let totalKeluarCount = 0;
       if (logData) {
         const formattedLogs = logData.map(log => {
-          // 🔥 PERBAIKAN: Menangkap baik kata 'Keluar' maupun 'Pengeluaran'
+          // Menangkap baik kata 'Keluar' maupun 'Pengeluaran'
           const logType = (log.type || '').trim();
           
           if (logType === 'Keluar' || logType === 'Pengeluaran') {
@@ -75,13 +74,18 @@ export default function AdminDashboard({ role = 'admin' }) {
           return {
             id: log.transaction_id || log.id,
             item: log.item_name,
-            unit: logType === 'Masuk' ? 'Gudang Utama' : (log.requester || 'Kantor Cabang'),
+            unit: logType === 'Masuk' ? 'Admin' : (log.requester || 'Kantor Cabang'),
             type: logType === 'Pengeluaran' ? 'Keluar' : logType, // Standardisasi label UI menjadi 'Keluar'
             date: displayDate
           };
         });
 
+        // Set Total Barang Keluar
         setBarangKeluar(totalKeluarCount);
+        
+        // 🔥 LOGIKA BALANCE: Total Masuk = Sisa Stok Gudang + Barang yang sudah Keluar
+        setBarangMasuk(totalStock + totalKeluarCount);
+
         setActivityLogs(formattedLogs.slice(0, 5)); // Ambil 5 aktivitas terbaru
       }
 
@@ -144,7 +148,7 @@ export default function AdminDashboard({ role = 'admin' }) {
                       const { payload } = entry;
                       return (
                         <span className="text-zinc-600 font-medium">
-                          {value}: <span className="font-bold text-zinc-600">{payload.value} Unit</span>
+                          {value}: <span className="font-semi-bold text-zinc-500">{payload.value} Unit</span>
                         </span>
                       );
                     }}
