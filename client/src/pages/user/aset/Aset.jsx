@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Filter, Calendar, Package, X, Check, ShoppingCart } from 'lucide-react';
-import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient Anda
+import { supabase } from '../../../../supabaseClient'; 
 
 export default function Aset({ setCurrentView }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,7 +25,7 @@ export default function Aset({ setCurrentView }) {
   // STATE FILTER
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('Semua'); 
-  const [filterType, setFilterType] = useState('Default'); // 'Default' atau 'Kategori'
+  const [filterType, setFilterType] = useState('Default'); 
   
   const filterMenuRef = useRef(null);
 
@@ -45,13 +45,13 @@ export default function Aset({ setCurrentView }) {
       if (error) throw error;
 
       if (data) {
-        // Mapping data dari Supabase agar sesuai dengan struktur UI katalog
         const formattedItems = data.map(item => ({
           id: item.id,
           nama: item.name,
           kode: item.id,
           kategori: item.category || 'Umum',
           stok: `${item.stock || 0} Unit`,
+          rawStok: parseInt(item.stock) || 0, // 🔥 Menyimpan nilai angka asli stok untuk filter
           tglUpdate: item.date || 'Hari ini',
           gambar: item.image || 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?q=80&w=400&auto=format&fit=crop'
         }));
@@ -95,7 +95,6 @@ export default function Aset({ setCurrentView }) {
     setSelectedAsset(aset);
   };
 
-  // Fungsi menambah barang ke dalam keranjang belanja
   const handleAddToCart = () => {
     if (selectedAsset) {
       const isExist = cart.some(item => item.kodeAset === selectedAsset.kode);
@@ -104,21 +103,19 @@ export default function Aset({ setCurrentView }) {
         const updatedCart = [...cart, {
           namaAset: selectedAsset.nama,
           kodeAset: selectedAsset.kode,
-          jumlah: 1 // default jumlah awal item
+          jumlah: 1 
         }];
         setCart(updatedCart);
       }
-      setSelectedAsset(null); // Tutup modal setelah ditambah
+      setSelectedAsset(null); 
     }
   };
 
-  // Fungsi menghapus item spesifik dari keranjang belanja
   const handleRemoveFromCart = (kodeAset) => {
     const updatedCart = cart.filter(item => item.kodeAset !== kodeAset);
     setCart(updatedCart);
   };
 
-  // Mengalihkan view dashboard internal ke halaman form permintaan bawa data multi-items
   const handleRedirectToForm = () => {
     if (cart.length > 0) {
       setCurrentView('ajukan-permintaan');
@@ -130,7 +127,7 @@ export default function Aset({ setCurrentView }) {
   return (
     <div className="w-full space-y-6 animate-in fade-in duration-400 min-h-screen text-zinc-800 pb-12">
       
-      {/* SEKSI NOTIFIKASI LAYOUT KERANJANG ATAS (Floating Summary) */}
+      {/* SEKSI NOTIFIKASI LAYOUT KERANJANG ATAS */}
       {cart.length > 0 && (
         <div className="w-full bg-emerald-50 border border-emerald-600/30 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm animate-in slide-in-from-top-4 duration-300">
           <div className="flex items-center gap-3">
@@ -186,10 +183,7 @@ export default function Aset({ setCurrentView }) {
 
           {isFilterOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-white border border-zinc-200 rounded-2xl shadow-xl z-30 p-2.5 animate-in fade-in slide-in-from-top-2 duration-150">
-              <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-2 mb-1.5">
-                Opsi Filter
-              </div>
-
+              <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-2 mb-1.5">Opsi Filter</div>
               <button
                 onClick={() => {
                   setFilterType('Default');
@@ -198,19 +192,12 @@ export default function Aset({ setCurrentView }) {
                 }}
                 className="w-full flex items-center justify-between px-2.5 py-2 text-left text-xs font-semibold rounded-xl hover:bg-zinc-50 transition-colors cursor-pointer"
               >
-                <span className={filterType === 'Default' ? 'text-[#00664b]' : 'text-zinc-700'}>
-                  Default
-                </span>
+                <span className={filterType === 'Default' ? 'text-[#00664b]' : 'text-zinc-700'}>Default</span>
                 {filterType === 'Default' && <Check size={14} className="text-[#00664b]" />}
               </button>
-
               <hr className="border-zinc-100 my-1.5" />
-
               <div className="space-y-0.5">
-                <div className="px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                  Kategori
-                </div>
-                
+                <div className="px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Kategori</div>
                 {['ATK', 'Elektronik'].map((kat) => (
                   <button
                     key={kat}
@@ -248,15 +235,24 @@ export default function Aset({ setCurrentView }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
           {filteredAset.map((aset) => {
             const isAddedInCart = cart.some(item => item.kodeAset === aset.kode);
+            const isHabis = aset.rawStok === 0; // 🔥 Pengecekan barang habis
+
             return (
               <div 
                 key={aset.id}
-                onClick={() => handleOpenModal(aset)}
-                className={`bg-white border rounded-3xl p-4 flex gap-4 cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-[1.01] select-none relative overflow-hidden ${
-                  isAddedInCart ? 'border-emerald-500 ring-1 ring-emerald-500/20' : 'border-zinc-200/80'
+                // 🔥 Kunci klik jika stok barang 0
+                onClick={() => {
+                  if (!isHabis) handleOpenModal(aset);
+                }}
+                // 🔥 Berikan class styling redup & tidak bisa diklik jika habis
+                className={`bg-white border rounded-3xl p-4 flex gap-4 transition-all duration-300 select-none relative overflow-hidden ${
+                  isHabis 
+                    ? 'opacity-60 grayscale cursor-not-allowed bg-zinc-50 border-zinc-200' 
+                    : `cursor-pointer hover:shadow-md hover:scale-[1.01] ${isAddedInCart ? 'border-emerald-500 ring-1 ring-emerald-500/20' : 'border-zinc-200/80'}`
                 }`}
               >
-                {isAddedInCart && (
+                
+                {!isHabis && isAddedInCart && (
                   <div className="absolute top-0 right-0 bg-emerald-500 text-white pl-3 pr-2 py-1 rounded-bl-xl text-[9px] font-bold flex items-center gap-1 shadow-sm">
                     <Check size={10} strokeWidth={3} /> DIPILIH
                   </div>
@@ -280,7 +276,7 @@ export default function Aset({ setCurrentView }) {
                       <div className="flex items-center gap-2.5">
                         <Package size={13} className="text-zinc-500" />
                         <span className="text-zinc-400 font-normal">|</span>
-                        <span>{aset.stok}</span>
+                        <span className={isHabis ? "text-red-500" : ""}>{aset.stok}</span>
                       </div>
                     </div>
                   </div>
