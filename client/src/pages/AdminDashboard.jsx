@@ -40,7 +40,6 @@ export default function AdminDashboard({ role = 'admin' }) {
           categoryMap[cat] += qty;
         });
 
-        // 🔥 Set Total Barang Gudang sesuai dengan sisa stok fisik saat ini
         setTotalBarang(totalStock);
 
         const formattedCategoryData = Object.keys(categoryMap).map(catName => ({
@@ -58,35 +57,46 @@ export default function AdminDashboard({ role = 'admin' }) {
 
       if (logError) throw logError;
 
+      // 🔥 3. Ambil data requests untuk mendapatkan NAMA UNIT/CABANG secara akurat
+      const { data: reqData } = await supabase
+        .from('requests')
+        .select('id, unit');
+
       let totalKeluarCount = 0;
       if (logData) {
         const formattedLogs = logData.map(log => {
-          // Menangkap baik kata 'Keluar' maupun 'Pengeluaran'
           const logType = (log.type || '').trim();
           
           if (logType === 'Keluar' || logType === 'Pengeluaran') {
             totalKeluarCount += (parseInt(log.qty) || 0);
           }
           
-          // Format tanggal default fallback ke created_at
           const displayDate = log.date || (log.created_at ? new Date(log.created_at).toLocaleDateString('id-ID') : '-');
+
+          // 🔥 LOGIKA PENCARIAN UNIT CABANG LINTAS TABEL
+          let unitDisplay = 'Gudang Pusat';
+          if (logType === 'Masuk') {
+            unitDisplay = 'Gudang Pusat';
+          } else {
+            // Cocokkan transaction_id (misal REQ-...) dengan id di tabel requests
+            const matchedRequest = reqData?.find(r => r.id === log.transaction_id);
+            
+            // Jika ketemu di tabel requests, gunakan unit-nya. Jika tidak, baru ambil data mentah dari log
+            unitDisplay = matchedRequest?.unit || log.unit || 'Kantor Cabang';
+          }
 
           return {
             id: log.transaction_id || log.id,
             item: log.item_name,
-            unit: logType === 'Masuk' ? 'Admin' : (log.requester || 'Kantor Cabang'),
-            type: logType === 'Pengeluaran' ? 'Keluar' : logType, // Standardisasi label UI menjadi 'Keluar'
+            unit: unitDisplay, // Hasilnya akan akurat (contoh: "KC Semarang")
+            type: logType === 'Pengeluaran' ? 'Keluar' : logType,
             date: displayDate
           };
         });
 
-        // Set Total Barang Keluar
         setBarangKeluar(totalKeluarCount);
-        
-        // 🔥 LOGIKA BALANCE: Total Masuk = Sisa Stok Gudang + Barang yang sudah Keluar
         setBarangMasuk(totalStock + totalKeluarCount);
-
-        setActivityLogs(formattedLogs.slice(0, 5)); // Ambil 5 aktivitas terbaru
+        setActivityLogs(formattedLogs.slice(0, 5));
       }
 
     } catch (error) {
@@ -167,7 +177,7 @@ export default function AdminDashboard({ role = 'admin' }) {
               <thead>
                 <tr className="text-zinc-500 border-b bg-zinc-50/50 text-xs uppercase font-semibold">
                   <th className="pb-3 pt-2 px-2">Barang</th>
-                  <th className="pb-3 pt-2 px-2">Nama</th>
+                  <th className="pb-3 pt-2 px-2">Unit</th>
                   <th className="pb-3 pt-2 px-2">Status</th>
                   <th className="pb-3 pt-2 px-2">Tanggal</th>
                 </tr>
@@ -181,7 +191,7 @@ export default function AdminDashboard({ role = 'admin' }) {
                   activityLogs.map((log, index) => (
                     <tr key={index} className="hover:bg-zinc-50/40 transition-colors">
                       <td className="py-4 px-2 font-medium text-zinc-900 truncate max-w-[150px]">{log.item}</td>
-                      <td className="py-4 px-2 font-medium text-zinc-600">{log.unit}</td> 
+                      <td className="py-4 px-2 font-bold text-[#00664b]">{log.unit}</td> 
                       <td className="py-4 px-2">
                         <span className={`px-2 py-0.5 text-xs font-semibold rounded-md ${log.type === 'Masuk' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {log.type}
@@ -198,4 +208,4 @@ export default function AdminDashboard({ role = 'admin' }) {
       </div>
     </div>
   );
-}
+} 
