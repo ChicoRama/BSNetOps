@@ -28,7 +28,7 @@ export default function AjukanPermintaan() {
       localStorage.removeItem('selectedAssetData');
     }
 
-    // 🔥 1. AMBIL DATA DARI LOCAL STORAGE (Sesi Login Saat Ini)
+    // 1. AMBIL DATA DARI LOCAL STORAGE (Sesi Login Saat Ini)
     const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
     
     if (activeUser) {
@@ -45,7 +45,7 @@ export default function AjukanPermintaan() {
         noTelepon: activeUser.phone || activeUser.no_telepon || activeUser.no_hp || ''
       }));
 
-      // 🔥 2. TARIK DATA LENGKAP DARI DATABASE (Tabel user_roles)
+      // 2. TARIK DATA LENGKAP DARI DATABASE (Tabel user_roles)
       fetchUserProfileFromDB(identifier);
     }
   }, [isMultiItem]);
@@ -62,7 +62,6 @@ export default function AjukanPermintaan() {
       if (error) throw error;
 
       if (data) {
-        // 🔥 Update form otomatis dengan data terbaru dari database
         setFormData(prev => ({
           ...prev,
           namaLengkap: data.username || data.name || data.nama_lengkap || data.email?.split('@')[0] || prev.namaLengkap,
@@ -70,7 +69,6 @@ export default function AjukanPermintaan() {
           divisi: data.unit || data.divisi || prev.divisi,            
           jabatan: data.role || data.jabatan || prev.jabatan,       
           email: data.email || prev.email,
-          // Tangkap variasi nama kolom no telepon di database
           noTelepon: data.phone || data.no_telepon || data.no_hp || prev.noTelepon 
         }));
       }
@@ -152,20 +150,44 @@ export default function AjukanPermintaan() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // 🔥 PERBAIKAN: Fungsi penanganan input kuantitas agar bisa dihapus & diisi manual
   const handleQtyChange = (index, val) => {
     const updated = [...daftarBarang];
-    let inputVal = parseInt(val) || 1;
     const batasStok = updated[index].stokMaksimal;
 
+    // Jika user menghapus angka (inputan kosong), izinkan kosong sementara
+    if (val === '') {
+      updated[index].jumlah = '';
+      setDaftarBarang(updated);
+      return;
+    }
+
+    let inputVal = parseInt(val, 10);
+
+    // Cegah NaN
+    if (isNaN(inputVal)) {
+      updated[index].jumlah = '';
+      setDaftarBarang(updated);
+      return;
+    }
+
+    // Peringatan jika melebihi batas stok
     if (inputVal > batasStok) {
       inputVal = batasStok; 
       alert(`⚠️ Peringatan: Stok barang "${updated[index].namaAset}" di gudang hanya tersisa ${batasStok} unit!`);
     }
-    
-    if (inputVal < 1) inputVal = 1;
 
     updated[index].jumlah = inputVal;
     setDaftarBarang(updated);
+  };
+
+  // 🔥 PERBAIKAN: Jika saat diklik di luar input nilainya masih kosong, kembalikan ke minimal 1
+  const handleQtyBlur = (index) => {
+    const updated = [...daftarBarang];
+    if (!updated[index].jumlah || updated[index].jumlah < 1) {
+      updated[index].jumlah = 1;
+      setDaftarBarang(updated);
+    }
   };
 
   const handleKeteranganItemChange = (index, val) => {
@@ -186,6 +208,13 @@ export default function AjukanPermintaan() {
       const barangHabis = daftarBarang.find(b => b.stokMaksimal === 0);
       if (barangHabis) {
         alert(`Gagal: Stok barang "${barangHabis.namaAset}" sedang kosong (0 unit). Silakan hapus barang tersebut dari daftar pengajuan.`);
+        return;
+      }
+
+      // Pastikan tidak ada barang dengan kuantitas kosong sebelum lanjut
+      const isAnyQtyEmpty = daftarBarang.some(b => !b.jumlah || b.jumlah < 1);
+      if (isAnyQtyEmpty) {
+        alert("Silakan periksa kembali jumlah barang yang diajukan, tidak boleh kosong atau 0.");
         return;
       }
       
@@ -228,7 +257,7 @@ export default function AjukanPermintaan() {
         request_id: generatedId, 
         kode_barang: b.kodeAset,
         nama_barang: b.namaAset,
-        jumlah_diminta: b.jumlah,
+        jumlah_diminta: Number(b.jumlah) || 1,
         prioritas: b.prioritas, 
         remark: b.keterangan 
       }));
@@ -363,7 +392,6 @@ export default function AjukanPermintaan() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                      {/* Pastikan value dropdown memiliki ejaan yang cocok dengan database (misal: 'KC Semarang') */}
                       <select name="divisi" value={formData.divisi} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" required>
                         <option value="" disabled hidden>Pilih Unit</option>
                         <option value="KC Semarang">KC Semarang</option>
@@ -373,7 +401,6 @@ export default function AjukanPermintaan() {
                         <option value="KCP Kendal">KCP Kendal</option>
                         <option value="KCP Kudus">KCP Kudus</option>
                         <option value="KCP Magelang">KCP Magelang</option>
-                        {/* Tambahkan manual opsi tambahan ini untuk menangkap jika value di database tidak ada di atas */}
                         {!["KC Semarang", "KCP Majapahit", "KCP Ngaliyan", "KCP Ungaran", "KCP Kendal", "KCP Kudus", "KCP Magelang", ""].includes(formData.divisi) && (
                           <option value={formData.divisi}>{formData.divisi}</option>
                         )}
@@ -450,12 +477,14 @@ export default function AjukanPermintaan() {
 
                               <div className="flex items-center gap-2 bg-zinc-50 p-1.5 rounded-lg border border-zinc-200">
                                 <label className="text-xs text-zinc-600 font-medium ml-1">Kuantitas:</label>
+                                {/* 🔥 INPUT DENGAN PENDUKUNG HAPUS & KETIK MANUAL */}
                                 <input 
                                   type="number" 
                                   min="1" 
                                   max={barang.stokMaksimal}
                                   value={barang.jumlah} 
                                   onChange={(e) => handleQtyChange(idx, e.target.value)} 
+                                  onBlur={() => handleQtyBlur(idx)}
                                   className={`w-16 text-center text-xs border rounded py-1 px-1.5 focus:outline-[#4d8c6b] ${barang.stokMaksimal === 0 ? 'bg-red-50 border-red-300' : 'border-zinc-300'} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
                                   required
                                   disabled={barang.stokMaksimal === 0}

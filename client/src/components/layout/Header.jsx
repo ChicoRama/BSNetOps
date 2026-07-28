@@ -95,7 +95,8 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
             const stockAlertNotif = {
               id: 'system-alert-stock', // ID statis agar mudah dikenali
               title: 'Peringatan Stok Menipis!',
-              message: `Terdapat ${criticalItems.length} item (termasuk ${criticalItems[0].name}) yang stoknya 3, unit. Segera lakukan restock.`,
+              // 🔥 INI BAGIAN YANG DIPERBAIKI: Mengambil angka stok asli dari database
+              message: `Terdapat ${criticalItems.length} item menipis (termasuk ${criticalItems[0].name} sisa ${criticalItems[0].stock} unit). Segera lakukan restock.`,
               type: 'alert',
               is_read: false, 
               created_at: new Date().toISOString()

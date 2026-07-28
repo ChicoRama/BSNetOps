@@ -81,7 +81,7 @@ export default function RiwayatPermintaan() {
             tgl: req.tanggal,
             pemohon: req.nama_pemohon,
             unit: req.unit || '',
-            statusDb: req.status, // Status asli dari DB untuk cek ACC
+            statusDb: req.status, 
             isDiserahkan: req.is_diserahkan || false,
             tanggalDiserahkan: req.tanggal_diserahkan || '',
             keperluan: req.keperluan || '-',
@@ -174,7 +174,6 @@ export default function RiwayatPermintaan() {
 
   const activeLaporan = laporanRiwayat.find(l => l.id === selectedLaporanId);
 
-  // Mapping data untuk TemplateDokumenA4 (Termasuk QR Code Admin & Manager)
   const isApprovedByManager = activeLaporan?.statusDb?.toLowerCase() === 'selesai';
   const isHandedOverByAdmin = activeLaporan?.isDiserahkan === true;
 
@@ -287,83 +286,89 @@ export default function RiwayatPermintaan() {
           </div>
         ) : (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="flex items-center justify-between p-4 border-b border-zinc-200 bg-zinc-50/50">
+            {/* HEADER DETAIL (Full Background Hijau Sesuai Gambar) */}
+            <div className="flex items-center justify-between p-5 bg-[#58a27d] text-white">
               <div className="flex items-center gap-4">
                 <button 
                   onClick={() => setSelectedLaporanId(null)}
-                  className="p-1.5 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-100 text-zinc-600 transition-colors cursor-pointer"
+                  className="p-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors cursor-pointer"
                 >
                   <ArrowLeft size={18} />
                 </button>
                 <div>
-                  <h3 className="font-bold text-zinc-900 text-sm flex items-center gap-2">
-                    <FileText size={16} className="text-[#00664b]" /> {activeLaporan.id}
+                  <h3 className="font-bold text-sm flex items-center gap-2">
+                    <FileText size={16} className="text-white/80" /> {activeLaporan.id}
                   </h3>
-                  <p className="text-[11px] text-zinc-500 font-medium">{activeLaporan.tgl}</p>
+                  <p className="text-[10px] text-white/80 font-medium mt-0.5">
+                    {activeLaporan.tgl} • Permintaan Inventaris
+                  </p>
                 </div>
               </div>
 
-              {/* TOMBOL LIHAT BON & DOWNLOAD PDF DI HALAMAN DETAIL */}
+              {/* TOMBOL LIHAT BON */}
               <button 
                 onClick={() => setShowBonPreview(true)}
-                className="px-4 py-2 bg-[#00664b] hover:bg-[#004d38] text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
+                className="px-4 py-2 bg-white text-[#00664b] hover:bg-zinc-100 text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-2"
               >
                 <FileText size={14} /> Lihat Bon Permintaan
               </button>
             </div>
 
-            <div className="overflow-x-auto p-4">
-              <h4 className="text-xs font-bold text-zinc-700 mb-3 uppercase tracking-wider">Rincian Barang yang Diajukan</h4>
-              <table className="w-full text-left border border-zinc-200 rounded-xl overflow-hidden border-collapse">
-                <thead>
-                  <tr className="bg-zinc-100 text-zinc-600 text-[11px] font-bold">
-                    <th className="py-2.5 px-4 w-12 text-center">No</th>
-                    <th className="py-2.5 px-4">Nama Barang</th>
-                    <th className="py-2.5 px-4 text-center">Prioritas</th>
-                    <th className="py-2.5 px-4 text-center">Jumlah Disetujui</th>
-                    <th className="py-2.5 px-4 text-center">Status Item</th>
-                    <th className="py-2.5 px-4 text-center">Aksi Penerimaan</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs font-semibold text-zinc-700 divide-y divide-zinc-200">
-                  {activeLaporan.items.map((item, index) => (
-                    <tr key={item.idItem} className="hover:bg-zinc-50 transition-colors">
-                      <td className="py-3 px-4 text-center text-zinc-400 font-mono">{index + 1}</td>
-                      <td className="py-3 px-4 text-zinc-900 capitalize">{item.barang}</td>
-                      <td className="py-3 px-4 text-center">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          item.prioritasItem === 'Tinggi' ? 'bg-red-50 text-red-600 border-red-200' :
-                          item.prioritasItem === 'Sedang' ? 'bg-yellow-50 text-yellow-600 border-yellow-200' : 'bg-gray-100 text-gray-600 border-gray-200'
-                        }`}>
-                          {item.prioritasItem}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center font-bold text-[#00664b]">{item.jumlah} Unit</td>
-                      <td className="py-3 px-4">
-                        <div className="flex justify-center">
-                          {item.statusItem === 'Pending' && <span className="text-amber-600 font-bold flex items-center gap-1"><Clock size={12}/> Menunggu ACC</span>}
-                          {item.statusItem === 'Approved' && <span className="text-blue-600 font-bold flex items-center gap-1"><CheckCircle2 size={12}/> Siap Diambil</span>}
-                          {item.statusItem === 'Received' && <span className="text-emerald-600 font-bold flex items-center gap-1"><PackageCheck size={12}/> Diterima</span>}
-                          {item.statusItem === 'Rejected' && <span className="text-red-600 font-bold flex items-center gap-1"><XCircle size={12}/> Ditolak</span>}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {item.statusItem === 'Pending' && <span className="text-zinc-400 text-[10px] italic">Menunggu persetujuan Manager...</span>}
-                        {item.statusItem === 'Rejected' && <span className="text-zinc-400 text-[10px] italic">-</span>}
-                        {item.statusItem === 'Received' && <span className="text-[#00664b] text-[10px] font-bold">Terverifikasi ✓</span>}
-                        {item.statusItem === 'Approved' && (
-                          <button
-                            onClick={() => handleTerimaBarang(activeLaporan.id, item.idItem)}
-                            className="px-3 py-1.5 bg-[#58a27d] hover:bg-[#4a8a69] text-white text-[10px] font-bold rounded-lg transition-colors shadow-sm active:scale-95 cursor-pointer"
-                          >
-                            Barang Diterima
-                          </button>
-                        )}
-                      </td>
+            {/* TABEL RINCIAN BARANG */}
+            <div className="p-6">
+              <h4 className="text-xs font-bold text-zinc-500 mb-4 uppercase tracking-wider">Rincian Barang yang Diajukan</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-zinc-200 text-zinc-500 text-[10px] font-bold uppercase tracking-wider">
+                      <th className="py-3 px-4 w-12 text-center">No</th>
+                      <th className="py-3 px-4">Nama Barang</th>
+                      <th className="py-3 px-4 text-center">Prioritas</th>
+                      <th className="py-3 px-4 text-center">Jumlah</th>
+                      <th className="py-3 px-4 text-center">Status Item</th>
+                      <th className="py-3 px-4 text-center">Aksi Penerimaan</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="text-xs font-semibold text-zinc-700 divide-y divide-zinc-100">
+                    {activeLaporan.items.map((item, index) => (
+                      <tr key={item.idItem} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="py-4 px-4 text-center text-zinc-400 font-mono">{index + 1}</td>
+                        <td className="py-4 px-4 text-zinc-900 font-bold capitalize">{item.barang}</td>
+                        <td className="py-4 px-4 text-center">
+                          <span className={`px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider ${
+                            item.prioritasItem === 'Tinggi' ? 'bg-red-50 text-red-500' :
+                            item.prioritasItem === 'Sedang' ? 'bg-yellow-50 text-amber-500' : 'bg-gray-50 text-gray-500'
+                          }`}>
+                            {item.prioritasItem}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-center font-bold text-[#00664b]">{item.jumlahDisetujui ?? item.jumlahDiminta} Unit</td>
+                        <td className="py-4 px-4">
+                          <div className="flex justify-center">
+                            {item.statusItem === 'Pending' && <span className="text-amber-600 font-bold flex items-center gap-1"><Clock size={12}/> Menunggu ACC</span>}
+                            {item.statusItem === 'Approved' && <span className="text-blue-600 font-bold flex items-center gap-1"><CheckCircle2 size={12}/> Siap Diambil</span>}
+                            {item.statusItem === 'Received' && <span className="text-emerald-600 font-bold flex items-center gap-1"><PackageCheck size={12}/> Diterima</span>}
+                            {item.statusItem === 'Rejected' && <span className="text-red-600 font-bold flex items-center gap-1"><XCircle size={12}/> Ditolak</span>}
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          {item.statusItem === 'Pending' && <span className="text-zinc-400 text-[10px] italic">Menunggu persetujuan Manager...</span>}
+                          {item.statusItem === 'Rejected' && <span className="text-zinc-400 text-[10px] italic">-</span>}
+                          {item.statusItem === 'Received' && <span className="text-[#00664b] text-[10px] font-bold">Terverifikasi ✓</span>}
+                          {item.statusItem === 'Approved' && (
+                            <button
+                              onClick={() => handleTerimaBarang(activeLaporan.id, item.idItem)}
+                              className="px-3 py-1.5 bg-[#58a27d] hover:bg-[#4a8a69] text-white text-[10px] font-bold rounded-lg transition-colors shadow-sm active:scale-95 cursor-pointer"
+                            >
+                              Barang Diterima
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

@@ -15,6 +15,7 @@ export default function RegisterPage() {
   });
 
   const [error, setError] = useState({});
+  const [loading, setLoading] = useState(false); // 🔥 Tambahan state loading
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -56,42 +57,46 @@ export default function RegisterPage() {
       newError.staffId = "ID Staff tidak valid (harus diawali BSN)";
     }
 
+    // 🔥 VALIDASI DOMAIN EMAIL (Saat ini gmail.com, nanti ubah ke btn.co.id)
+    const allowedDomain = "@gmail.com";
+    if (form.email && !form.email.toLowerCase().endsWith(allowedDomain)) {
+      newError.email = `Wajib menggunakan email berakhiran ${allowedDomain}`;
+    }
+
     setError(newError);
     if (Object.keys(newError).length > 0) return;
 
-    // 1. DAFTARKAN KE SUPABASE AUTH
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-    });
+    setLoading(true);
 
-    if (authError) {
-      alert(`Gagal mendaftar: ${authError.message}`);
-      return;
-    }
-
-    // 2. SIMPAN DATA TAMBAHAN KE TABEL 'user_roles'
-    const { error: dbError } = await supabase
-      .from('user_roles')
-      .insert([
-        {
-          email: form.email.toLowerCase(),
-          role: 'user', // Otomatis jadi user biasa saat pertama daftar
-          username: form.username,
-          staff_id: form.staffId,
-          unit: form.unit
+    try {
+      // 1. DAFTARKAN KE SUPABASE AUTH & SISIPKAN METADATA
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: {
+          data: {
+            // Data ini akan ditangkap oleh Trigger SQL di database
+            username: form.username,
+            staff_id: form.staffId,
+            unit: form.unit
+          }
         }
-      ]);
+      });
 
-    if (dbError) {
-      console.error("Gagal simpan data ke tabel:", dbError.message);
-      // Peringatan jika Auth berhasil tapi gagal masuk tabel
-      alert("Akun terbuat tapi data profil gagal disimpan. Hubungi admin."); 
-      return;
+      if (authError) throw authError;
+
+      // 🔥 INSERT MANUAL KE TABEL 'user_roles' DIHAPUS DARI SINI
+      // Biarkan Database Trigger SQL yang bekerja otomatis di background!
+
+      alert(`Registrasi Berhasil! 🎉\n\nLink verifikasi telah dikirim ke email ${form.email}.\nSilakan cek kotak masuk (atau folder Spam/Junk) Anda dan klik link tersebut sebelum melakukan Login.`);
+      navigate("/login"); 
+
+    } catch (err) {
+      console.error("Terjadi kesalahan:", err.message);
+      alert("Terjadi kesalahan saat pendaftaran: " + err.message);
+    } finally {
+      setLoading(false);
     }
-
-    alert("Registrasi berhasil! Silakan login.");
-    navigate("/login"); // Otomatis pindah ke halaman login
   };
 
   return (
@@ -143,7 +148,7 @@ export default function RegisterPage() {
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
                 />
                 {error.username && (
-                  <p className="text-xs text-red-500">{error.username}</p>
+                  <p className="text-xs text-red-500 mt-1">{error.username}</p>
                 )}
               </div>
 
@@ -159,7 +164,7 @@ export default function RegisterPage() {
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
                 />
                 {error.password && (
-                  <p className="text-xs text-red-500">{error.password}</p>
+                  <p className="text-xs text-red-500 mt-1">{error.password}</p>
                 )}
               </div>
 
@@ -170,11 +175,11 @@ export default function RegisterPage() {
                   name="email"
                   value={form.email}
                   onChange={handleChange}
-                  placeholder="Masukkan email"
+                  placeholder="Contoh: budi@gmail.com"
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
                 />
                 {error.email && (
-                  <p className="text-xs text-red-500">{error.email}</p>
+                  <p className="text-xs text-red-500 mt-1">{error.email}</p>
                 )}
               </div>
 
@@ -192,14 +197,14 @@ export default function RegisterPage() {
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
                 />
                 {error.confirmPassword && (
-                  <p className="text-xs text-red-500">
+                  <p className="text-xs text-red-500 mt-1">
                     {error.confirmPassword}
                   </p>
                 )}
               </div>
 
               {/* ID STAFF */}
-              <div className="text-sm font-semibold">
+              <div>
                 <label className="text-sm font-semibold">ID Staff</label>
 
                 <input
@@ -211,10 +216,11 @@ export default function RegisterPage() {
                 />
 
                 {error.staffId && (
-                  <p className="text-xs text-red-500">{error.staffId}</p>
+                  <p className="text-xs text-red-500 mt-1">{error.staffId}</p>
                 )}
               </div>
 
+              {/* UNIT */}
               <div>
                 <label className="text-sm font-semibold">Unit</label>
                 <select
@@ -233,7 +239,7 @@ export default function RegisterPage() {
                   <option value="KCP Magelang">KCP Magelang</option>
                 </select>
                 {error.unit && (
-                  <p className="text-xs text-red-500">{error.unit}</p>
+                  <p className="text-xs text-red-500 mt-1">{error.unit}</p>
                 )}
               </div>
 
@@ -242,9 +248,10 @@ export default function RegisterPage() {
             {/* BUTTON */}
             <button
               type="submit"
-              className="w-full cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#004d3a]"
+              disabled={loading}
+              className="w-full cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#004d3a] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
             >
-              Daftar
+              {loading ? "Mendaftarkan Akun..." : "Daftar"}
             </button>
           </form>
 

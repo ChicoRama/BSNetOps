@@ -174,7 +174,7 @@ export default function UserDashboard({ setCurrentView }) {
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <div>
             <h3 className="font-bold text-zinc-900 text-lg">Permintaan Terakhir Anda</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">Memonitor logistik barang secara real-time dari database</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Melihat history request permintaan secara real-time</p>
           </div>
           <span className="text-xs bg-zinc-100 text-zinc-600 px-2.5 py-1 font-medium rounded-md">
             {loading ? 'Memuat...' : lastRequest.date}
@@ -187,7 +187,6 @@ export default function UserDashboard({ setCurrentView }) {
             <p className="text-sm font-semibold text-zinc-900">
               {loading ? 'Memuat data permintaan...' : lastRequest.item}
             </p>
-            <p className="text-xs text-zinc-500 mt-0.5">Keperluan: {lastRequest.category}</p>
           </div>
           <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
             lastRequest.currentStep === 3 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
