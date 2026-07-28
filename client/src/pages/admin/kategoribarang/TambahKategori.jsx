@@ -24,9 +24,23 @@ export default function TambahKategori({ onClose, onSave }) {
     }));
   }, [formData.name]);
 
-  const handleSubmit = (e) => {
+const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(formData); // category_code sudah otomatis masuk ke sini
+    
+    // 🔥 BUAT KODE KATEGORI YANG PASTI UNIK SAAT TOMBOL SIMPAN DITEKAN
+    // Menggunakan kombinasi angka random atau timestamp (waktu saat ini)
+    const randomNum = Math.floor(1000 + Math.random() * 9000); 
+    const uniqueCategoryCode = `KAT-${randomNum}`; 
+
+    // Data yang akan dikirim ke KategoriBarang.jsx
+    const newCategory = {
+      category_code: uniqueCategoryCode, // <-- Gunakan kode unik ini
+      name: formData.name,
+      description: formData.description,
+      // ... field lain jika ada
+    };
+
+    onSave(newCategory); // Kirim ke fungsi handleAddCategory di induk
   };
 
   return (

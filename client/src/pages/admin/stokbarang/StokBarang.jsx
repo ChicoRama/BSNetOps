@@ -44,20 +44,37 @@ export default function StokBarang({ role = 'admin' }) {
     setIsEditOpen(true);
   };
 
-  const handleSoftDelete = async (id) => {
-    if (window.confirm(`Apakah Anda yakin ingin menghapus item ${id}? (Data akan dipindahkan ke Trash)`)) {
-      try {
+  // 🔥 CEK APAKAH BARANG PERNAH DIREQUEST SEBELUM MASUK TRASH
+  const handleSoftDelete = async (item) => {
+    try {
+      // 1. Cek riwayat request barang ini di tabel request_items
+      const { count, error: checkError } = await supabase
+        .from('request_items')
+        .select('*', { count: 'exact', head: true })
+        .or(`kode_barang.eq.${item.id},nama_barang.ilike.${item.name}`);
+
+      if (checkError) throw checkError;
+
+      // 2. Blokir jika barang pernah di-request sebelumnya
+      if (count && count > 0) {
+        alert(`❌ TIDAK BISA DIHAPUS!\n\nBarang "${item.name}" (ID: ${item.id}) sudah pernah diajukan/di-request oleh user dalam riwayat transaksi.\n\nData tidak dapat dihapus demi menjaga keutuhan riwayat.`);
+        return;
+      }
+
+      // 3. Jika aman, lanjutkan proses pindah ke Trash
+      if (window.confirm(`Apakah Anda yakin ingin menghapus item ${item.id}? (Data akan dipindahkan ke Trash)`)) {
         const timestamp = new Date().toISOString();
         const { error } = await supabase
           .from('items')
           .update({ deleted_at: timestamp })
-          .eq('id', id);
+          .eq('id', item.id);
 
         if (error) throw error;
-        setItems(items.map(item => item.id === id ? { ...item, deleted_at: timestamp } : item));
-      } catch (error) {
-        console.error('Gagal arsip item:', error.message);
+        setItems(items.map(i => i.id === item.id ? { ...i, deleted_at: timestamp } : i));
       }
+    } catch (error) {
+      console.error('Gagal arsip item:', error.message);
+      alert('Terjadi kesalahan saat memeriksa data riwayat.');
     }
   };
 
@@ -75,10 +92,8 @@ export default function StokBarang({ role = 'admin' }) {
     }
   };
 
-  // 🔥 CEK APAKAH BARANG PERNAH DIREQUEST SEBELUM HAPUS PERMANEN
   const handleHardDelete = async (item) => {
     try {
-      // 1. Cek ke tabel request_items berdasarkan kode barang (id) atau nama barang
       const { count, error: checkError } = await supabase
         .from('request_items')
         .select('*', { count: 'exact', head: true })
@@ -86,13 +101,11 @@ export default function StokBarang({ role = 'admin' }) {
 
       if (checkError) throw checkError;
 
-      // 2. Jika barang tercatat pernah di-request, blokir hapus permanen!
       if (count && count > 0) {
-        alert(`❌ TIDAK BISA DIHAPUS PERMANEN!\n\nBarang "${item.name}" (ID: ${item.id}) sudah pernah diajukan/di-request oleh user dalam riwayat transaksi.\n\nBarang ini hanya diizinkan untuk masuk ke Trash (Soft Delete) demi keamanan data riwayat.`);
+        alert(`❌ TIDAK BISA DIHAPUS PERMANEN!\n\nBarang "${item.name}" (ID: ${item.id}) sudah pernah diajukan/di-request oleh user.`);
         return;
       }
 
-      // 3. Jika belum pernah di-request sama sekali, izinkan hapus permanen
       if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus item ${item.id} secara PERMANEN? Data tidak dapat dikembalikan.`)) {
         const { error: deleteError } = await supabase
           .from('items')
@@ -143,7 +156,7 @@ export default function StokBarang({ role = 'admin' }) {
         <div className="flex items-center gap-3">
           {!showTrash && (
             <button onClick={() => setShowTrash(true)} className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-sm font-semibold hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer group">
-              <Trash2 size={16} /> Trash
+              <Trash2 size={16} />
             </button>
           )}
           {isAdmin && !showTrash && (
@@ -215,7 +228,8 @@ export default function StokBarang({ role = 'admin' }) {
                       ) : (
                         <>
                           <button onClick={() => handleEditClick(item)} className="p-1.5 text-zinc-500 hover:text-blue-600 cursor-pointer"><Edit3 size={16} /></button>
-                          <button onClick={() => handleSoftDelete(item.id)} className="p-1.5 text-zinc-500 hover:text-red-600 cursor-pointer"><Trash2 size={16} /></button>
+                          {/* 🔥 Mengirim objek item lengkap ke fungsi handleSoftDelete */}
+                          <button onClick={() => handleSoftDelete(item)} className="p-1.5 text-zinc-500 hover:text-red-600 cursor-pointer"><Trash2 size={16} /></button>
                         </>
                       )}
                     </td>

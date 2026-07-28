@@ -27,7 +27,7 @@ export default function UserDashboard({ setCurrentView }) {
     try {
       const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
       const userEmail = activeUser?.email || activeUser?.mail || '';
-      const fallbackName = activeUser?.namaLengkap || activeUser?.name || 'Chico Diar';
+      const fallbackName = activeUser?.namaLengkap || activeUser?.name || '';
       setUserName(fallbackName);
 
       if (!userEmail) {

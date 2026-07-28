@@ -28,20 +28,24 @@ export default function AjukanPermintaan() {
       localStorage.removeItem('selectedAssetData');
     }
 
-    // Ambil data user yang sedang login dari localStorage
+    // 🔥 1. AMBIL DATA DARI LOCAL STORAGE (Sesi Login Saat Ini)
     const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
     
     if (activeUser) {
       const identifier = activeUser.email || activeUser.username || activeUser.namaLengkap;
 
-      // Isi sementara dari localStorage (nama & email dasar)
+      // Isi otomatis dari localStorage (Sebagai fallback instan sebelum ke DB)
       setFormData(prev => ({
         ...prev,
         namaLengkap: activeUser.namaLengkap || activeUser.name || activeUser.username || '',
-        email: activeUser.email || ''
+        email: activeUser.email || '',
+        nipPegawai: activeUser.nip || activeUser.staff_id || '',
+        divisi: activeUser.unit || activeUser.divisi || '',
+        jabatan: activeUser.role || activeUser.jabatan || '',
+        noTelepon: activeUser.phone || activeUser.no_telepon || activeUser.no_hp || ''
       }));
 
-      // Sambung ke database Supabase tabel 'user_roles' untuk menarik data lengkap
+      // 🔥 2. TARIK DATA LENGKAP DARI DATABASE (Tabel user_roles)
       fetchUserProfileFromDB(identifier);
     }
   }, [isMultiItem]);
@@ -58,13 +62,16 @@ export default function AjukanPermintaan() {
       if (error) throw error;
 
       if (data) {
+        // 🔥 Update form otomatis dengan data terbaru dari database
         setFormData(prev => ({
           ...prev,
-          namaLengkap: data.username || data.email?.split('@')[0] || prev.namaLengkap,
-          nipPegawai: data.staff_id || '', 
-          divisi: data.unit || '',            
-          jabatan: data.role || 'User',       
+          namaLengkap: data.username || data.name || data.nama_lengkap || data.email?.split('@')[0] || prev.namaLengkap,
+          nipPegawai: data.staff_id || data.nip || prev.nipPegawai, 
+          divisi: data.unit || data.divisi || prev.divisi,            
+          jabatan: data.role || data.jabatan || prev.jabatan,       
           email: data.email || prev.email,
+          // Tangkap variasi nama kolom no telepon di database
+          noTelepon: data.phone || data.no_telepon || data.no_hp || prev.noTelepon 
         }));
       }
     } catch (err) {
@@ -80,7 +87,6 @@ export default function AjukanPermintaan() {
       const isoOneYearAgo = oneYearAgo.toISOString();
 
       const processedItems = await Promise.all(assets.map(async (asset) => {
-        // 1. Cek frekuensi untuk prioritas otomatis
         const { count, error } = await supabase
           .from('request_items')
           .select('id, created_at', { count: 'exact', head: true })
@@ -89,8 +95,7 @@ export default function AjukanPermintaan() {
 
         if (error) throw error;
 
-        // 🔥 2. AMBIL STOK REAL-TIME DARI TABEL MASTER 'items'
-        let currentStock = 999; // Default jika gagal membaca
+        let currentStock = 999;
         if (asset.kodeAset) {
           const { data: itemData } = await supabase
             .from('items')
@@ -118,7 +123,7 @@ export default function AjukanPermintaan() {
           namaAset: asset.namaAset,
           kodeAset: asset.kodeAset,
           jumlah: asset.jumlah || 1,
-          stokMaksimal: currentStock, // Simpan sisa stok fisik di gudang
+          stokMaksimal: currentStock, 
           prioritas: calculatedPriority, 
           autoFrequency: frequency,       
           keterangan: '' 
@@ -132,7 +137,7 @@ export default function AjukanPermintaan() {
         namaAset: asset.namaAset,
         kodeAset: asset.kodeAset,
         jumlah: asset.jumlah || 1,
-        stokMaksimal: asset.stock || 999, // Fallback stok
+        stokMaksimal: asset.stock || 999, 
         prioritas: 'Rendah',
         keterangan: ''
       }));
@@ -147,19 +152,16 @@ export default function AjukanPermintaan() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // 🔥 FUNGSI VALIDASI QTY AGAR TIDAK MELEBIHI STOK
   const handleQtyChange = (index, val) => {
     const updated = [...daftarBarang];
     let inputVal = parseInt(val) || 1;
     const batasStok = updated[index].stokMaksimal;
 
-    // Jika user menginput lebih dari stok yang ada
     if (inputVal > batasStok) {
-      inputVal = batasStok; // Paksa kembali ke angka maksimal stok
+      inputVal = batasStok; 
       alert(`⚠️ Peringatan: Stok barang "${updated[index].namaAset}" di gudang hanya tersisa ${batasStok} unit!`);
     }
     
-    // Jangan biarkan angka di bawah 1
     if (inputVal < 1) inputVal = 1;
 
     updated[index].jumlah = inputVal;
@@ -181,7 +183,6 @@ export default function AjukanPermintaan() {
         return;
       }
       
-      // Tambahan validasi: pastikan tidak ada barang dengan stok 0 yang diajukan
       const barangHabis = daftarBarang.find(b => b.stokMaksimal === 0);
       if (barangHabis) {
         alert(`Gagal: Stok barang "${barangHabis.namaAset}" sedang kosong (0 unit). Silakan hapus barang tersebut dari daftar pengajuan.`);
@@ -205,7 +206,6 @@ export default function AjukanPermintaan() {
       const randomCode = Math.floor(100 + Math.random() * 900);
       const generatedId = `REQ-${dateCode}-${randomCode}`;
 
-      // 1. Simpan data utama request
       const { error: reqError } = await supabase
         .from('requests')
         .insert([
@@ -224,7 +224,6 @@ export default function AjukanPermintaan() {
 
       if (reqError) throw reqError;
 
-      // 2. Simpan rincian item barang
       const itemsToInsert = daftarBarang.map(b => ({
         request_id: generatedId, 
         kode_barang: b.kodeAset,
@@ -240,7 +239,6 @@ export default function AjukanPermintaan() {
 
       if (itemsError) throw itemsError;
 
-      // 3. KIRIM NOTIFIKASI SECARA OTOMATIS & DINAMIS KE ADMIN/MANAGER
       try {
         const { data: staffList, error: staffError } = await supabase
           .from('user_roles')
@@ -361,10 +359,11 @@ export default function AjukanPermintaan() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">NIP/ ID pegawai</label>
-                      <input type="text" name="nipPegawai" value={formData.nipPegawai} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required />
+                      <input type="text" name="nipPegawai" value={formData.nipPegawai} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-not-allowed" readOnly required />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                      {/* Pastikan value dropdown memiliki ejaan yang cocok dengan database (misal: 'KC Semarang') */}
                       <select name="divisi" value={formData.divisi} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" required>
                         <option value="" disabled hidden>Pilih Unit</option>
                         <option value="KC Semarang">KC Semarang</option>
@@ -374,18 +373,38 @@ export default function AjukanPermintaan() {
                         <option value="KCP Kendal">KCP Kendal</option>
                         <option value="KCP Kudus">KCP Kudus</option>
                         <option value="KCP Magelang">KCP Magelang</option>
+                        {/* Tambahkan manual opsi tambahan ini untuk menangkap jika value di database tidak ada di atas */}
+                        {!["KC Semarang", "KCP Majapahit", "KCP Ngaliyan", "KCP Ungaran", "KCP Kendal", "KCP Kudus", "KCP Magelang", ""].includes(formData.divisi) && (
+                          <option value={formData.divisi}>{formData.divisi}</option>
+                        )}
                       </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
-                      <select name="jabatan" value={formData.jabatan} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" required>
-                        <option value="" disabled hidden>Pilih Jabatan</option>
-                        <option value="Head Unit">Head Unit</option>
-                        <option value="User">User</option>
-                      </select>
+                      <input
+                        type="text"
+                        name="jabatan"
+                        value={formData.jabatan}
+                        readOnly
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none capitalize font-medium"
+                        required
+                      />
                     </div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required /></div>
-                    <div><label className="block text-sm font-medium text-gray-700 mb-1">No Telephone</label><input type="tel" name="noTelepon" value={formData.noTelepon} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required /></div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                      <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-not-allowed" readOnly required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">No Telephone</label>
+                      <input 
+                        type="number" 
+                        name="noTelepon" 
+                        value={formData.noTelepon} 
+                        onChange={handleChange} 
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                        required 
+                      />
+                    </div>
                   </div>
                   <div className="text-center text-xs text-gray-500 mt-8">1/3</div>
                 </>
@@ -434,14 +453,13 @@ export default function AjukanPermintaan() {
                                 <input 
                                   type="number" 
                                   min="1" 
-                                  max={barang.stokMaksimal} // 🔥 BATAS MAKSIMAL HTML
+                                  max={barang.stokMaksimal}
                                   value={barang.jumlah} 
                                   onChange={(e) => handleQtyChange(idx, e.target.value)} 
-                                  className={`w-16 text-center text-xs border rounded py-1 px-1.5 focus:outline-[#4d8c6b] ${barang.stokMaksimal === 0 ? 'bg-red-50 border-red-300' : 'border-zinc-300'}`}
+                                  className={`w-16 text-center text-xs border rounded py-1 px-1.5 focus:outline-[#4d8c6b] ${barang.stokMaksimal === 0 ? 'bg-red-50 border-red-300' : 'border-zinc-300'} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
                                   required
                                   disabled={barang.stokMaksimal === 0}
                                 />
-                                {/* 🔥 INFO SISA STOK */}
                                 <span className={`text-[10px] font-bold ${barang.stokMaksimal === 0 ? 'text-red-500' : 'text-zinc-500'} pr-1`}>
                                   / {barang.stokMaksimal} Stok
                                 </span>

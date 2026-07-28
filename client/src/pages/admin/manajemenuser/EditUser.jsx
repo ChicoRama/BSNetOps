@@ -9,7 +9,7 @@ export default function EditUser({ userData, onClose, onSave }) {
     email: '', 
     role: 'Staff', 
     unit: 'KC Semarang',
-    isSuspended: false, // 🔥 Menambahkan state penangguhan akun
+    isSuspended: false,
     isDeleted: false 
   });
 
@@ -85,7 +85,7 @@ export default function EditUser({ userData, onClose, onSave }) {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit / Cabang</label>
+              <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit</label>
               <select 
                 value={formData.unit} 
                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })} 

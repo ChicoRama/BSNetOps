@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Clock, CheckCircle2, Activity, Package, Hash, Download, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { Search, Clock, CheckCircle2, Activity, Package, Hash, Download, ArrowDownRight, ArrowUpRight, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../../../supabaseClient';
 
@@ -16,23 +16,42 @@ export default function LogAktifitas() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // 1. Ambil data dari tabel activity_logs
+      const { data: logData, error: logError } = await supabase
         .from('activity_logs')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (logError) throw logError;
 
-      if (data) {
-        const formatted = data.map(item => ({
-          id: item.transaction_id,
-          requester: item.requester,
-          itemName: item.item_name,
-          qty: item.qty,
-          date: item.date,
-          status: item.status,
-          type: item.type
-        }));
+      // 🔥 2. Ambil data dari tabel requests untuk mendapatkan info Unit Cabang yang akurat
+      const { data: reqData } = await supabase
+        .from('requests')
+        .select('id, unit');
+
+      if (logData) {
+        const formatted = logData.map(item => {
+          const logType = (item.type || '').trim();
+          const normalizedType = logType === 'Pengeluaran' ? 'Keluar' : logType;
+          
+          // 🔥 3. Cari Unit Cabang berdasarkan ID Transaksi
+          let targetUnit = '';
+          if (normalizedType === 'Keluar') {
+            const matchedRequest = reqData?.find(r => r.id === item.transaction_id);
+            targetUnit = matchedRequest?.unit || item.unit || 'Kantor Cabang';
+          }
+
+          return {
+            id: item.transaction_id,
+            requester: item.requester,
+            itemName: item.item_name,
+            qty: item.qty,
+            date: item.date || new Date(item.created_at).toLocaleDateString('id-ID'),
+            status: item.status,
+            type: normalizedType,
+            unit: targetUnit // Simpan data unit ke dalam state
+          };
+        });
         setHistory(formatted);
       }
     } catch (error) {
@@ -47,11 +66,24 @@ export default function LogAktifitas() {
     .filter(item =>
       item.requester.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.id.toLowerCase().includes(searchQuery.toLowerCase())
+      item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.unit && item.unit.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
   const handleExport = () => {
-    const worksheet = XLSX.utils.json_to_sheet(filteredHistory);
+    // Mempercantik data sebelum diexport ke Excel agar ada kolom Unit Tujuan
+    const exportData = filteredHistory.map(item => ({
+      "ID Transaksi": item.id,
+      "Pemohon/Aktor": item.requester,
+      "Jenis": item.type,
+      "Barang": item.itemName,
+      "Jumlah": item.qty,
+      "Unit Tujuan": item.type === 'Keluar' ? item.unit : 'Gudang Pusat',
+      "Tanggal": item.date,
+      "Status": item.status
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Logistik");
     XLSX.writeFile(workbook, "Laporan_Activity_Log_BSN.xlsx");
@@ -85,7 +117,7 @@ export default function LogAktifitas() {
             type="text" 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari ID, pemohon, atau nama barang..." 
+            placeholder="Cari ID, pemohon, nama barang, atau unit cabang..." 
             className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]"
           />
         </div>
@@ -120,18 +152,28 @@ export default function LogAktifitas() {
             <div className="bg-white border border-zinc-200 rounded-xl p-5 shadow-sm">
               <div className="flex flex-col sm:flex-row justify-between gap-4">
                 <div className="space-y-1">
-                  <p className="text-sm text-zinc-700">
+                  
+                  {/* 🔥 PERUBAHAN KALIMAT DINAMIS MENGGUNAKAN DATA UNIT */}
+                  <p className="text-sm text-zinc-700 leading-relaxed">
                     <span className="font-bold text-zinc-900">{item.requester}</span> 
-                    {item.type === 'Masuk' ? ' menambahkan pasokan barang ke inventaris berupa ' : ' melakukan pengambilan barang berupa '}
+                    {item.type === 'Masuk' ? (
+                      ' menambahkan pasokan barang ke inventaris gudang pusat berupa '
+                    ) : (
+                      <> melakukan pengambilan barang untuk dikirim ke <span className="font-bold text-zinc-900 underline decoration-zinc-300 underline-offset-2">{item.unit}</span> berupa </>
+                    )}
                     <span className="font-semibold text-[#00664b]">{item.qty} Unit {item.itemName}</span>.
                   </p>
-                  <div className="flex gap-4 text-xs text-zinc-400">
+
+                  <div className="flex gap-4 text-xs text-zinc-400 pt-1">
                     <span><Hash size={12} className="inline mr-1" />{item.id}</span>
                     <span><Clock size={12} className="inline mr-1" />{item.date}</span>
+                    {item.type === 'Keluar' && (
+                      <span className="text-[#00664b] font-medium"><MapPin size={12} className="inline mr-1" />{item.unit}</span>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <span className={`px-3 py-1.5 rounded-md text-xs font-bold border ${item.type === 'Masuk' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                     <Package size={14} className="inline mr-1" /> {item.type}
                   </span>

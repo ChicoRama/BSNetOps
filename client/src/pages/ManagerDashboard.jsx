@@ -79,7 +79,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-export default function ManagerDashboard() {
+export default function ManagerDashboard({ role = 'manager', setCurrentView}) {
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
   const [stats, setStats] = useState({
@@ -198,7 +198,9 @@ export default function ManagerDashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        <div className="bg-white p-6 border border-zinc-200/80 rounded-2xl shadow-sm border-l-4 border-l-amber-500 transition-all hover:scale-[1.01]">
+        <div
+        onClick={() => setCurrentView('approval-request')}
+        className="bg-white p-6 border border-zinc-200/80 rounded-2xl shadow-sm border-l-4 border-l-amber-500 transition-all hover:scale-[1.01]">
           <div className="flex justify-between items-start">
             <div>
               <h3 className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">Antrean Approval</h3>

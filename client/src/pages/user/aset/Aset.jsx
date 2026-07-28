@@ -251,7 +251,7 @@ export default function Aset({ setCurrentView }) {
                     : `cursor-pointer hover:shadow-md hover:scale-[1.01] ${isAddedInCart ? 'border-emerald-500 ring-1 ring-emerald-500/20' : 'border-zinc-200/80'}`
                 }`}
               >
-                
+
                 {!isHabis && isAddedInCart && (
                   <div className="absolute top-0 right-0 bg-emerald-500 text-white pl-3 pr-2 py-1 rounded-bl-xl text-[9px] font-bold flex items-center gap-1 shadow-sm">
                     <Check size={10} strokeWidth={3} /> DIPILIH
