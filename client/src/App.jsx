@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
@@ -93,7 +93,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         {/* ================= ROUTE PUBLIK ================= */}
         <Route path="/" element={<LandingPage />} />
@@ -148,6 +148,6 @@ export default function App() {
         {/* Jika mengetik URL asal-asalan, kembalikan ke landing page */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );                                                                                      
 }
