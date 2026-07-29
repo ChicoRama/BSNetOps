@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
-// Menerima prop onSave dari parent
 export default function EditKategori({ categoryData, onClose, onSave }) {
   const [formData, setFormData] = useState({ id: '', name: '', description: '', deleted_at: null });
 
@@ -11,14 +11,14 @@ export default function EditKategori({ categoryData, onClose, onSave }) {
         id: categoryData.id || '',
         name: categoryData.name || '',
         description: categoryData.description || '',
-        deleted_at: categoryData.deleted_at || null // Amankan statuts deleted_at agar tidak hilang saat update
+        deleted_at: categoryData.deleted_at || null 
       });
     }
   }, [categoryData]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onSave(formData); // Kirim form data kembali ke KategoriBarang.jsx
+    onSave(formData); 
   };
 
   return (
@@ -35,7 +35,6 @@ export default function EditKategori({ categoryData, onClose, onSave }) {
           </button>
         </div>
 
-        {/* Menggunakan handleSubmit yang memanggil onSave */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-semibold text-zinc-700 mb-1">Nama Kategori</label>

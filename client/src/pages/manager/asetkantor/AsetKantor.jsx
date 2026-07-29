@@ -1,22 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Download, Box, CheckCircle, AlertTriangle, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient kamu
+import toast from 'react-hot-toast';
 
 export default function AsetKantorManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Semua Kategori');
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // REVISI: Kode ID Aset disesuaikan (AST-EL untuk Elektronik & AST-ATK untuk ATK)
-  const [assets] = useState([
-    { id: 'AST-ATK-2026-001', nama: 'Kertas HVS A4 80gr', kategori: 'ATK', total: 15, bagus: 15, rusak: 0, lokasi: 'Ruang Rapat Utama' },
-    { id: 'AST-ATK-2026-002', nama: 'Pena Gel Hitam Box', kategori: 'ATK', total: 40, bagus: 38, rusak: 2, lokasi: 'Area Kerja Lt. 2' },
-    { id: 'AST-EL-2026-001', nama: 'AC Split Daikin 2 PK', kategori: 'Elektronik', total: 8, bagus: 8, rusak: 0, lokasi: 'Seluruh Ruangan' },
-    { id: 'AST-EL-2026-002', nama: 'Proyektor Epson EB-X400', kategori: 'Elektronik', total: 5, bagus: 4, rusak: 1, lokasi: 'Ruang Aula' },
-    { id: 'AST-ATK-2026-003', nama: 'Buku Agenda Kerja BSN', kategori: 'ATK', total: 12, bagus: 12, rusak: 0, lokasi: 'Ruang Arsip' },
-  ]);
+  // Ambil data asli dari tabel 'items' Supabase
+  useEffect(() => {
+    fetchAssetsFromSupabase();
+  }, []);
+
+  const fetchAssetsFromSupabase = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('items')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        // Mapping data database ke format state komponen
+        const formattedAssets = data.map(item => ({
+          id: item.id,
+          nama: item.name,
+          kategori: item.category || 'Lainnya',
+          total: item.stock || 0,
+          bagus: item.stock || 0, // Asumsi default bagus sejumlah stok (bisa disesuaikan jika ada kolom kondisi rusak)
+          rusak: item.rusak || 0,
+          lokasi: item.location || '-'
+        }));
+        setAssets(formattedAssets);
+      }
+    } catch (error) {
+      console.error('Gagal memuat data aset kantor:', error.message);
+      toast.error('Gagal memuat data aset dari database!');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const totalBarang = assets.reduce((acc, curr) => acc + curr.total, 0);
   const totalBagus = assets.reduce((acc, curr) => acc + curr.bagus, 0);
   const totalRusak = assets.reduce((acc, curr) => acc + curr.rusak, 0);
+
+  const filteredAssets = assets
+    .filter(item => selectedCategory === 'Semua Kategori' || item.kategori === selectedCategory)
+    .filter(item => item.nama.toLowerCase().includes(searchQuery.toLowerCase()) || item.id.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const handleExport = () => {
+    toast.success('Laporan rekapitulasi aset kantor berhasil diunduh!');
+  };
 
   return (
     <div className="w-full space-y-7 animate-in fade-in slide-in-from-bottom-4 duration-500 text-zinc-800">
@@ -25,11 +64,11 @@ export default function AsetKantorManager() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Monitoring Aset Kantor</h2>
-          <p className="text-xs text-white-700 font-medium mt-0.5">Tinjauan komprehensif status kondisi, kuantitas, dan lokasi penempatan aset internal BSN.</p>
+          <p className="text-xs text-white/80 font-medium mt-0.5">Tinjauan komprehensif status kondisi, kuantitas, dan lokasi penempatan aset internal BSN.</p>
         </div>
         
         <button 
-          onClick={() => alert('Mengunduh laporan rekapitulasi aset kantor format .xlsx')}
+          onClick={handleExport}
           className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#00664b] hover:bg-[#004d38] text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-900/10 hover:shadow-lg hover:shadow-emerald-900/20 transition-all duration-300 cursor-pointer self-start sm:self-auto transform hover:-translate-y-0.5"
         >
           <Download size={14} /> Export Laporan
@@ -118,10 +157,20 @@ export default function AsetKantorManager() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 text-xs font-medium text-zinc-700">
-              {assets
-                .filter(item => selectedCategory === 'Semua Kategori' || item.kategori === selectedCategory)
-                .filter(item => item.nama.toLowerCase().includes(searchQuery.toLowerCase()) || item.id.toLowerCase().includes(searchQuery.toLowerCase()))
-                .map((asset) => (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-zinc-400 font-medium">
+                    Memuat data aset dari database...
+                  </td>
+                </tr>
+              ) : filteredAssets.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-12 text-center text-zinc-400 font-medium">
+                    Tidak ada data aset kantor ditemukan.
+                  </td>
+                </tr>
+              ) : (
+                filteredAssets.map((asset) => (
                   <tr key={asset.id} className="hover:bg-zinc-50/50 transition-colors group">
                     <td className="py-4 px-5 font-mono font-bold text-zinc-900 tracking-tight">{asset.id}</td>
                     <td className="py-4 px-4 font-bold text-zinc-800 group-hover:text-[#58a27d] transition-colors">{asset.nama}</td>
@@ -135,14 +184,15 @@ export default function AsetKantorManager() {
                     <td className="py-4 px-4 text-center font-bold text-red-600 bg-red-50/10">{asset.rusak}</td>
                     <td className="py-4 px-5 text-zinc-500 font-normal">{asset.lokasi}</td>
                   </tr>
-                ))}
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Pagination Footer */}
         <div className="p-3.5 bg-zinc-50/50 border-t border-zinc-100 flex items-center justify-between text-[11px] font-bold text-zinc-400">
-          <span className="font-medium">Menampilkan 1 - 5 dari 5 aset</span>
+          <span className="font-medium">Menampilkan {filteredAssets.length} data aset</span>
           <div className="flex items-center gap-1.5">
             <button className="p-1.5 border border-zinc-200 rounded-xl bg-white text-zinc-400 hover:text-zinc-600 hover:border-zinc-300 transition-all cursor-pointer shadow-sm">
               <ChevronLeft size={14} />

@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import html2pdf from 'html2pdf.js';
 import TemplateDokumenA4 from './TemplateDokumenA4';
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function AjukanPermintaan() {
   const printRef = useRef();
@@ -28,13 +29,11 @@ export default function AjukanPermintaan() {
       localStorage.removeItem('selectedAssetData');
     }
 
-    // 1. AMBIL DATA DARI LOCAL STORAGE (Sesi Login Saat Ini)
     const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
     
     if (activeUser) {
       const identifier = activeUser.email || activeUser.username || activeUser.namaLengkap;
 
-      // Isi otomatis dari localStorage (Sebagai fallback instan sebelum ke DB)
       setFormData(prev => ({
         ...prev,
         namaLengkap: activeUser.namaLengkap || activeUser.name || activeUser.username || '',
@@ -45,7 +44,6 @@ export default function AjukanPermintaan() {
         noTelepon: activeUser.phone || activeUser.no_telepon || activeUser.no_hp || ''
       }));
 
-      // 2. TARIK DATA LENGKAP DARI DATABASE (Tabel user_roles)
       fetchUserProfileFromDB(identifier);
     }
   }, [isMultiItem]);
@@ -150,12 +148,10 @@ export default function AjukanPermintaan() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // 🔥 PERBAIKAN: Fungsi penanganan input kuantitas agar bisa dihapus & diisi manual
   const handleQtyChange = (index, val) => {
     const updated = [...daftarBarang];
     const batasStok = updated[index].stokMaksimal;
 
-    // Jika user menghapus angka (inputan kosong), izinkan kosong sementara
     if (val === '') {
       updated[index].jumlah = '';
       setDaftarBarang(updated);
@@ -164,24 +160,21 @@ export default function AjukanPermintaan() {
 
     let inputVal = parseInt(val, 10);
 
-    // Cegah NaN
     if (isNaN(inputVal)) {
       updated[index].jumlah = '';
       setDaftarBarang(updated);
       return;
     }
 
-    // Peringatan jika melebihi batas stok
     if (inputVal > batasStok) {
       inputVal = batasStok; 
-      alert(`⚠️ Peringatan: Stok barang "${updated[index].namaAset}" di gudang hanya tersisa ${batasStok} unit!`);
+      toast.error(`Stok barang "${updated[index].namaAset}" di gudang hanya tersisa ${batasStok} unit!`);
     }
 
     updated[index].jumlah = inputVal;
     setDaftarBarang(updated);
   };
 
-  // 🔥 PERBAIKAN: Jika saat diklik di luar input nilainya masih kosong, kembalikan ke minimal 1
   const handleQtyBlur = (index) => {
     const updated = [...daftarBarang];
     if (!updated[index].jumlah || updated[index].jumlah < 1) {
@@ -201,20 +194,19 @@ export default function AjukanPermintaan() {
     if (currentStep === 1) setCurrentStep(2);
     else if (currentStep === 2) {
       if (daftarBarang.length === 0) {
-        alert("Belum ada barang yang diajukan. Silakan pilih kembali dari katalog.");
+        toast.error("Belum ada barang yang diajukan. Silakan pilih kembali dari katalog.");
         return;
       }
       
       const barangHabis = daftarBarang.find(b => b.stokMaksimal === 0);
       if (barangHabis) {
-        alert(`Gagal: Stok barang "${barangHabis.namaAset}" sedang kosong (0 unit). Silakan hapus barang tersebut dari daftar pengajuan.`);
+        toast.error(`Stok barang "${barangHabis.namaAset}" sedang kosong (0 unit). Silakan hapus barang tersebut dari daftar pengajuan.`);
         return;
       }
 
-      // Pastikan tidak ada barang dengan kuantitas kosong sebelum lanjut
       const isAnyQtyEmpty = daftarBarang.some(b => !b.jumlah || b.jumlah < 1);
       if (isAnyQtyEmpty) {
-        alert("Silakan periksa kembali jumlah barang yang diajukan, tidak boleh kosong atau 0.");
+        toast.error("Silakan periksa kembali jumlah barang yang diajukan, tidak boleh kosong atau 0.");
         return;
       }
       
@@ -229,6 +221,7 @@ export default function AjukanPermintaan() {
 
   const handleSubmitFinal = async () => {
     setIsExporting(true); 
+    const toastId = toast.loading('Mengirim pengajuan ke database...');
 
     try {
       const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -291,11 +284,12 @@ export default function AjukanPermintaan() {
         console.error("Gagal mengirim notifikasi otomatis:", notifError.message);
       }
 
+      toast.success('Pengajuan permintaan berhasil dikirim!', { id: toastId });
       setCurrentStep(4);
 
     } catch (err) {
       console.error("Error Database:", err);
-      alert(`Gagal menyimpan data ke database: ${err.message}`);
+      toast.error(`Gagal menyimpan data ke database: ${err.message}`, { id: toastId });
     } finally {
       setIsExporting(false);
     }
@@ -305,6 +299,8 @@ export default function AjukanPermintaan() {
     const element = printRef.current;
     if (!element) return;
     setIsExporting(true);
+
+    const toastId = toast.loading('Menyiapkan file PDF...');
 
     const opt = {
       margin:       0,
@@ -316,9 +312,11 @@ export default function AjukanPermintaan() {
 
     html2pdf().set(opt).from(element).save().then(() => {
       setIsExporting(false);
+      toast.success('PDF berhasil diunduh!', { id: toastId });
     }).catch((err) => {
       console.error("Error:", err);
       setIsExporting(false);
+      toast.error('Gagal mengunduh PDF.', { id: toastId });
     });
   };
 
@@ -477,7 +475,6 @@ export default function AjukanPermintaan() {
 
                               <div className="flex items-center gap-2 bg-zinc-50 p-1.5 rounded-lg border border-zinc-200">
                                 <label className="text-xs text-zinc-600 font-medium ml-1">Kuantitas:</label>
-                                {/* 🔥 INPUT DENGAN PENDUKUNG HAPUS & KETIK MANUAL */}
                                 <input 
                                   type="number" 
                                   min="1" 

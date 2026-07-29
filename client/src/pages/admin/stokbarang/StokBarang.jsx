@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit3, Trash2, Search, Filter, ArrowUpDown, RefreshCw, ArrowLeft, XCircle } from 'lucide-react';
+import { Plus, Edit3, Trash2, Search, Filter, ArrowUpDown, RefreshCw, ArrowLeft, XCircle, AlertTriangle, X } from 'lucide-react';
 import TambahItem from './TambahItem';
 import EditItem from './EditItem';
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast';
 
 export default function StokBarang({ role = 'admin' }) {
   const isAdmin = role === 'admin';
@@ -17,6 +18,15 @@ export default function StokBarang({ role = 'admin' }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('Semua');
   const [sortOrder, setSortOrder] = useState('none');
+
+  // 🔥 State untuk Modal Konfirmasi Custom (Pengganti window.confirm)
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'danger', // 'danger' atau 'warning'
+    onConfirm: () => {}
+  });
 
   useEffect(() => {
     fetchItems();
@@ -34,6 +44,7 @@ export default function StokBarang({ role = 'admin' }) {
       if (data) setItems(data);
     } catch (error) {
       console.error('Gagal mengambil data inventaris:', error.message);
+      toast.error('Gagal mengambil data inventaris!');
     } finally {
       setLoading(false);
     }
@@ -44,10 +55,8 @@ export default function StokBarang({ role = 'admin' }) {
     setIsEditOpen(true);
   };
 
-  // 🔥 CEK APAKAH BARANG PERNAH DIREQUEST SEBELUM MASUK TRASH
   const handleSoftDelete = async (item) => {
     try {
-      // 1. Cek riwayat request barang ini di tabel request_items
       const { count, error: checkError } = await supabase
         .from('request_items')
         .select('*', { count: 'exact', head: true })
@@ -55,26 +64,34 @@ export default function StokBarang({ role = 'admin' }) {
 
       if (checkError) throw checkError;
 
-      // 2. Blokir jika barang pernah di-request sebelumnya
       if (count && count > 0) {
-        alert(`❌ TIDAK BISA DIHAPUS!\n\nBarang "${item.name}" (ID: ${item.id}) sudah pernah diajukan/di-request oleh user dalam riwayat transaksi.\n\nData tidak dapat dihapus demi menjaga keutuhan riwayat.`);
+        toast.error(`TIDAK BISA DIHAPUS!\nBarang "${item.name}" sudah pernah diajukan/di-request.`, { duration: 5000 });
         return;
       }
 
-      // 3. Jika aman, lanjutkan proses pindah ke Trash
-      if (window.confirm(`Apakah Anda yakin ingin menghapus item ${item.id}? (Data akan dipindahkan ke Trash)`)) {
-        const timestamp = new Date().toISOString();
-        const { error } = await supabase
-          .from('items')
-          .update({ deleted_at: timestamp })
-          .eq('id', item.id);
+      // 🔥 Buka Modal Konfirmasi Custom (Soft Delete)
+      setConfirmModal({
+        isOpen: true,
+        title: 'Pindahkan ke Trash?',
+        message: `Apakah Anda yakin ingin memindahkan item "${item.name}" (${item.id}) ke tempat sampah?`,
+        type: 'warning',
+        onConfirm: async () => {
+          const timestamp = new Date().toISOString();
+          const { error } = await supabase
+            .from('items')
+            .update({ deleted_at: timestamp })
+            .eq('id', item.id);
 
-        if (error) throw error;
-        setItems(items.map(i => i.id === item.id ? { ...i, deleted_at: timestamp } : i));
-      }
+          if (error) throw error;
+          setItems(items.map(i => i.id === item.id ? { ...i, deleted_at: timestamp } : i));
+          toast.success(`Barang berhasil dipindahkan ke Trash.`);
+          setConfirmModal({ isOpen: false });
+        }
+      });
+
     } catch (error) {
       console.error('Gagal arsip item:', error.message);
-      alert('Terjadi kesalahan saat memeriksa data riwayat.');
+      toast.error('Terjadi kesalahan saat memeriksa data riwayat.');
     }
   };
 
@@ -87,8 +104,10 @@ export default function StokBarang({ role = 'admin' }) {
 
       if (error) throw error;
       setItems(items.map(item => item.id === id ? { ...item, deleted_at: null } : item));
+      toast.success('Barang berhasil dipulihkan!');
     } catch (error) {
       console.error('Gagal memulihkan item:', error.message);
+      toast.error('Gagal memulihkan item!');
     }
   };
 
@@ -102,24 +121,32 @@ export default function StokBarang({ role = 'admin' }) {
       if (checkError) throw checkError;
 
       if (count && count > 0) {
-        alert(`❌ TIDAK BISA DIHAPUS PERMANEN!\n\nBarang "${item.name}" (ID: ${item.id}) sudah pernah diajukan/di-request oleh user.`);
+        toast.error(`TIDAK BISA DIHAPUS PERMANEN!\nBarang "${item.name}" sudah pernah diajukan.`, { duration: 5000 });
         return;
       }
 
-      if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus item ${item.id} secara PERMANEN? Data tidak dapat dikembalikan.`)) {
-        const { error: deleteError } = await supabase
-          .from('items')
-          .delete()
-          .eq('id', item.id);
+      // 🔥 Buka Modal Konfirmasi Custom (Hard Delete)
+      setConfirmModal({
+        isOpen: true,
+        title: 'Hapus Permanen Barang?',
+        message: `PERINGATAN: Item "${item.name}" (${item.id}) akan dihapus secara PERMANEN dari database dan tidak dapat dikembalikan!`,
+        type: 'danger',
+        onConfirm: async () => {
+          const { error: deleteError } = await supabase
+            .from('items')
+            .delete()
+            .eq('id', item.id);
 
-        if (deleteError) throw deleteError;
-        setItems(items.filter(i => i.id !== item.id));
-        alert(`Sukses menghapus permanen item ${item.id}.`);
-      }
+          if (deleteError) throw deleteError;
+          setItems(items.filter(i => i.id !== item.id));
+          toast.success(`Sukses menghapus permanen item ${item.id}.`);
+          setConfirmModal({ isOpen: false });
+        }
+      });
 
     } catch (error) {
       console.error('Gagal memeriksa riwayat / menghapus permanen:', error.message);
-      alert('Terjadi kesalahan saat memproses data.');
+      toast.error('Terjadi kesalahan saat memproses data.');
     }
   };
 
@@ -167,7 +194,6 @@ export default function StokBarang({ role = 'admin' }) {
         </div>
       </div>
 
-      {/* Bar Pencarian */}
       <div className="flex bg-white p-4 rounded-xl shadow-md border border-zinc-200/80">
         <div className="flex-1 relative flex items-center">
           <Search size={18} className="absolute left-3 text-zinc-400" />
@@ -228,7 +254,6 @@ export default function StokBarang({ role = 'admin' }) {
                       ) : (
                         <>
                           <button onClick={() => handleEditClick(item)} className="p-1.5 text-zinc-500 hover:text-blue-600 cursor-pointer"><Edit3 size={16} /></button>
-                          {/* 🔥 Mengirim objek item lengkap ke fungsi handleSoftDelete */}
                           <button onClick={() => handleSoftDelete(item)} className="p-1.5 text-zinc-500 hover:text-red-600 cursor-pointer"><Trash2 size={16} /></button>
                         </>
                       )}
@@ -240,6 +265,37 @@ export default function StokBarang({ role = 'admin' }) {
           </tbody>
         </table>
       </div>
+
+      {/* 🔥 MODAL KONFIRMASI CUSTOM (GAYA BSN MODERN) */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center space-y-3">
+              <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900">{confirmModal.title}</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed px-2">{confirmModal.message}</p>
+            </div>
+            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-100 flex gap-3 justify-end">
+              <button 
+                onClick={() => setConfirmModal({ isOpen: false })} 
+                className="px-4 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-200/60 rounded-xl transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm} 
+                className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer ${
+                  confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#00664b] hover:bg-[#00553e]'
+                }`}
+              >
+                Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isAddOpen && (
         <TambahItem 

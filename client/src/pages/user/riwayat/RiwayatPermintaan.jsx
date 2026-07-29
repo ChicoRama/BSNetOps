@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Clock, CheckCircle2, XCircle, PackageCheck, Eye, ArrowLeft, FileText, Download, MoreVertical, X as CloseIcon } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
-import TemplateDokumenA4 from '../permintaan/TemplateDokumenA4'; // Sesuaikan path relatif ke file TemplateDokumenA4.jsx kamu
+import TemplateDokumenA4 from '../permintaan/TemplateDokumenA4'; 
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function RiwayatPermintaan() {
   const printRef = useRef();
@@ -111,12 +112,14 @@ export default function RiwayatPermintaan() {
       }
     } catch (err) {
       console.error('Gagal mengambil riwayat dari database:', err.message);
+      toast.error('Gagal mengambil riwayat permintaan!');
     } finally {
       setLoading(false);
     }
   };
 
   const handleTerimaBarang = async (laporanId, itemId) => {
+    const toastId = toast.loading('Memproses konfirmasi penerimaan...');
     try {
       const { error } = await supabase
         .from('request_items')
@@ -143,9 +146,11 @@ export default function RiwayatPermintaan() {
           return laporan;
         })
       );
+
+      toast.success('Barang berhasil dikonfirmasi diterima!', { id: toastId });
     } catch (error) {
       console.error("Gagal konfirmasi terima barang:", error.message);
-      alert("Terjadi kesalahan saat mengkonfirmasi barang.");
+      toast.error("Terjadi kesalahan saat mengkonfirmasi barang.", { id: toastId });
     }
   };
 
@@ -154,10 +159,12 @@ export default function RiwayatPermintaan() {
     if (!element) return;
     setIsExporting(true);
 
+    const toastId = toast.loading('Menyiapkan file PDF...');
+
     const opt = {
-      margin:      0,
-      filename:    `Bon_Barang_${activeLaporan?.id || 'BSN'}.pdf`,
-      image:       { type: 'jpeg', quality: 0.98 },
+      margin:       0,
+      filename:     `Bon_Barang_${activeLaporan?.id || 'BSN'}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
       html2canvas:  { scale: 2, useCORS: true, logging: false },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
     };
@@ -165,10 +172,12 @@ export default function RiwayatPermintaan() {
     html2pdf().set(opt).from(element).save().then(() => {
       setIsExporting(false);
       setIsMenuOpen(false);
+      toast.success('PDF berhasil diunduh!', { id: toastId });
     }).catch((err) => {
       console.error("Error:", err);
       setIsExporting(false);
       setIsMenuOpen(false);
+      toast.error('Gagal mengunduh PDF.', { id: toastId });
     });
   };
 
@@ -286,7 +295,7 @@ export default function RiwayatPermintaan() {
           </div>
         ) : (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-            {/* HEADER DETAIL (Full Background Hijau Sesuai Gambar) */}
+            {/* HEADER DETAIL */}
             <div className="flex items-center justify-between p-5 bg-[#58a27d] text-white">
               <div className="flex items-center gap-4">
                 <button 

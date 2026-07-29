@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { Toaster } from 'react-hot-toast';
 
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
@@ -91,9 +92,23 @@ function DashboardLayout({ role, currentView, setCurrentView, children }) {
 
 export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
+  const isDesktop = window.location.protocol === 'file:';
+  const AppRouter = isDesktop ? HashRouter : BrowserRouter;
 
   return (
-    <BrowserRouter>
+    <AppRouter>
+      <Toaster 
+        position="top-right" 
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#333',
+            color: '#fff',
+            borderRadius: '10px',
+          },
+        }} 
+      />
+
       <Routes>
         {/* ================= ROUTE PUBLIK ================= */}
         <Route path="/" element={<LandingPage />} />
@@ -148,6 +163,6 @@ export default function App() {
         {/* Jika mengetik URL asal-asalan, kembalikan ke landing page */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </AppRouter>
   );                                                                                      
 }

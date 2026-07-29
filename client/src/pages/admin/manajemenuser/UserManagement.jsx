@@ -3,6 +3,7 @@ import { Plus, Edit3, Trash2, Search, Filter, Shield, UserCheck, RotateCcw, XCir
 import TambahUser from './TambahUser';
 import EditUser from './EditUser';
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -15,7 +16,6 @@ export default function UserManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('Semua');
 
-  // 🔥 FETCH DATA DARI TABEL `user_roles` SUPABASE SAAT KOMPONEN DIMUAT
   useEffect(() => {
     fetchUsersFromSupabase();
   }, []);
@@ -31,7 +31,6 @@ export default function UserManagement() {
       if (error) throw error;
 
       if (data) {
-        // Mapping data dari Supabase ke format state komponen
         const formattedData = data.map(u => ({
           id: u.staff_id || u.id,
           originalId: u.id, 
@@ -39,7 +38,7 @@ export default function UserManagement() {
           email: u.email,
           role: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Staff',
           unit: u.unit || 'KC Semarang',
-          isSuspended: u.is_suspended || false, // 🔥 Tangkap status suspend dari database
+          isSuspended: u.is_suspended || false, 
           status: u.is_suspended ? 'Ditangguhkan' : 'Aktif', 
           isDeleted: u.deleted_at ? true : false,
           deleted_at: u.deleted_at
@@ -48,6 +47,7 @@ export default function UserManagement() {
       }
     } catch (error) {
       console.error('Gagal memuat data user:', error.message);
+      toast.error('Gagal memuat data user dari database!'); // 🔥 Toast Error
     } finally {
       setLoading(false);
     }
@@ -58,8 +58,8 @@ export default function UserManagement() {
     setIsEditOpen(true);
   };
 
-  // 🔥 UPDATE USER & STATUS SUSPEND KE SUPABASE
   const handleUpdateUser = async (updatedUser) => {
+    const toastId = toast.loading('Memperbarui data akun...'); // 🔥 Toast Loading
     try {
       const { error } = await supabase
         .from('user_roles')
@@ -68,22 +68,21 @@ export default function UserManagement() {
           email: updatedUser.email,
           role: updatedUser.role.toLowerCase(),
           unit: updatedUser.unit,
-          is_suspended: updatedUser.isSuspended // 🔥 Simpan status suspend ke database
+          is_suspended: updatedUser.isSuspended 
         })
         .eq('id', updatedUser.originalId);
 
       if (error) throw error;
 
       setIsEditOpen(false);
-      alert(`Sukses: Data akun ${updatedUser.name} berhasil diperbarui!`);
-      fetchUsersFromSupabase(); // Refresh data terbaru
+      toast.success(`Data akun ${updatedUser.name} berhasil diperbarui!`, { id: toastId }); // 🔥 Toast Sukses
+      fetchUsersFromSupabase(); 
     } catch (error) {
       console.error('Gagal memperbarui user:', error.message);
-      alert('Terjadi kesalahan saat memperbarui database.');
+      toast.error(`Gagal memperbarui database: ${error.message}`, { id: toastId }); // 🔥 Toast Error
     }
   };
 
-  // 🔥 SOFT DELETE (ARSIP KE TRASH) DI SUPABASE
   const handleSoftDelete = async (originalId, name) => {
     if (window.confirm(`Apakah Anda yakin ingin memindahkan akun ${name} ke tempat sampah?`)) {
       try {
@@ -98,14 +97,15 @@ export default function UserManagement() {
         setUsers(users.map(user => 
           user.originalId === originalId ? { ...user, isDeleted: true, deleted_at: timestamp } : user
         ));
+        
+        toast.success(`Akun ${name} dipindahkan ke tempat sampah.`); // 🔥 Toast Sukses
       } catch (error) {
         console.error('Gagal mengarsipkan akun:', error.message);
-        alert('Terjadi kesalahan pada database.');
+        toast.error(`Gagal mengarsipkan akun: ${error.message}`); // 🔥 Toast Error
       }
     }
   };
 
-  // 🔥 RESTORE USER DARI TRASH
   const handleRestore = async (originalId, name) => {
     if (window.confirm(`Kembalikan hak akses akun untuk ${name}?`)) {
       try {
@@ -119,14 +119,15 @@ export default function UserManagement() {
         setUsers(users.map(user => 
           user.originalId === originalId ? { ...user, isDeleted: false, deleted_at: null } : user
         ));
+        
+        toast.success(`Hak akses akun ${name} berhasil dipulihkan.`); // 🔥 Toast Sukses
       } catch (error) {
         console.error('Gagal memulihkan akun:', error.message);
-        alert('Terjadi kesalahan pada database.');
+        toast.error(`Gagal memulihkan akun: ${error.message}`); // 🔥 Toast Error
       }
     }
   };
 
-  // 🔥 HARD DELETE (HAPUS PERMANEN) DARI SUPABASE
   const handleHardDelete = async (originalId, name) => {
     if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN akun ${name}? Data tidak dapat dikembalikan.`)) {
       try {
@@ -138,9 +139,10 @@ export default function UserManagement() {
         if (error) throw error;
 
         setUsers(users.filter(user => user.originalId !== originalId));
+        toast.success(`Akun ${name} berhasil dihapus permanen.`); // 🔥 Toast Sukses
       } catch (error) {
         console.error('Gagal menghapus permanen akun:', error.message);
-        alert('Terjadi kesalahan pada database.');
+        toast.error(`Gagal menghapus permanen akun: ${error.message}`); // 🔥 Toast Error
       }
     }
   };

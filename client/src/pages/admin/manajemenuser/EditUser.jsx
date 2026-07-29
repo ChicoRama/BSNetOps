@@ -22,7 +22,7 @@ export default function EditUser({ userData, onClose, onSave }) {
         email: userData.email || '',
         role: userData.role || 'Staff',
         unit: userData.unit || 'KC Semarang',
-        isSuspended: userData.isSuspended || false, // 🔥 Ambil nilai suspend dari data user
+        isSuspended: userData.isSuspended || false, 
         isDeleted: userData.isDeleted || false 
       });
     }
@@ -30,7 +30,6 @@ export default function EditUser({ userData, onClose, onSave }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Mengirimkan kembali seluruh data ke fungsi onSave di UserManagement.jsx
     onSave(formData);
   };
 
@@ -98,7 +97,6 @@ export default function EditUser({ userData, onClose, onSave }) {
             </div>
           </div>
 
-          {/* 🔥 DROPDOWN STATUS KEAKTIFAN AKUN (MENANGGUHKAN / SUSPEND) */}
           <div>
             <label className="block text-sm font-semibold text-zinc-700 mb-1">Status Keaktifan Akun</label>
             <select 
