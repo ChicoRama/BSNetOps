@@ -36,13 +36,41 @@ export default function TambahItem({ onClose, onSuccess }) {
     const toastId = toast.loading('Menyimpan barang baru...');
 
     try {
-      const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-      const randomCode = Math.floor(100 + Math.random() * 900);
-      const generatedId = `BRG-${dateCode}-${randomCode}`;
-      const jumlahStok = parseInt(formData.stock) || 0;
+      // 🔥 LOGIKA BARU: MEMBUAT KODE BERURUTAN (001, 002, 003, dst)
+      const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, ''); // Cth: 20260729
+      const idPrefix = `BRG-${dateCode}-`;
 
+      // 1. Cek database untuk mencari barang terakhir yang diinput HARI INI
+      const { data: lastItems, error: fetchError } = await supabase
+        .from('items')
+        .select('id')
+        .ilike('id', `${idPrefix}%`) // Cari yang depannya BRG-20260729-
+        .order('id', { ascending: false })
+        .limit(1);
+
+      if (fetchError) throw fetchError;
+
+      let nextSequence = 1;
+
+      // 2. Jika sudah ada barang hari ini, ambil 3 angka terakhirnya lalu tambah 1
+      if (lastItems && lastItems.length > 0) {
+        const lastId = lastItems[0].id; // Contoh: BRG-20260729-005
+        const lastThreeDigits = lastId.split('-').pop(); // Ambil "005"
+        const lastNumber = parseInt(lastThreeDigits, 10);
+        
+        if (!isNaN(lastNumber)) {
+          nextSequence = lastNumber + 1; // 5 + 1 = 6
+        }
+      }
+
+      // 3. Format angkanya agar selalu 3 digit (contoh: 6 jadi "006")
+      const formattedSequence = String(nextSequence).padStart(3, '0');
+      const generatedId = `${idPrefix}${formattedSequence}`; // Hasil: BRG-20260729-006
+
+      const jumlahStok = parseInt(formData.stock) || 0;
       let imageUrl = null;
 
+      // Upload Gambar (Jika Ada)
       if (formData.image) {
         const file = formData.image;
         const fileExt = file.name.split('.').pop();
@@ -62,6 +90,7 @@ export default function TambahItem({ onClose, onSuccess }) {
         imageUrl = publicURLData.publicUrl;
       }
 
+      // Insert ke tabel items
       const { error: itemError } = await supabase
         .from('items')
         .insert([
@@ -80,6 +109,7 @@ export default function TambahItem({ onClose, onSuccess }) {
 
       if (itemError) throw itemError;
 
+      // Insert ke activity_logs
       const { error: logError } = await supabase
         .from('activity_logs')
         .insert([
@@ -99,7 +129,7 @@ export default function TambahItem({ onClose, onSuccess }) {
       if (logError) throw logError;
 
       // 🔥 Ubah loading jadi sukses
-      toast.success(`Barang "${formData.name}" berhasil ditambahkan!`, { id: toastId });
+      toast.success(`Barang "${formData.name}" berhasil ditambahkan dengan kode ${generatedId}!`, { id: toastId });
       
       if (onSuccess) onSuccess();
       onClose();
@@ -122,7 +152,7 @@ export default function TambahItem({ onClose, onSuccess }) {
             <h3 className="text-lg font-bold text-zinc-900">Tambah Item Baru</h3>
             <p className="text-xs text-zinc-500 mt-0.5">Masukkan unit aset fisik logistik ke sistem gudang</p>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-zinc-200/70 text-zinc-400 hover:text-zinc-600 rounded-lg transition-all cursor-pointer">
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-zinc-200/70 text-zinc-400 hover:text-zinc-600 rounded-lg transition-all cursor-pointer">
             <X size={18} />
           </button>
         </div>
