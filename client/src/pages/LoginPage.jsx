@@ -143,7 +143,7 @@ export default function LoginPage() {
       {/* BACKGROUND */}
       <div
         className="absolute inset-0 scale-105 bg-cover bg-center blur-sm"
-        style={{ backgroundImage: "url('/images/landingpage-bg.jpeg')" }}
+        style={{ backgroundImage: "url('./images/landingpage-bg.jpeg')" }}
       />
       <div className="absolute inset-0 bg-black/35" />
 

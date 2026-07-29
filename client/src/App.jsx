@@ -91,9 +91,11 @@ function DashboardLayout({ role, currentView, setCurrentView, children }) {
 
 export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
+  const isDesktop = window.location.protocol === 'file:';
+  const AppRouter = isDesktop ? HashRouter : BrowserRouter;
 
   return (
-    <HashRouter>
+    <AppRouter>
       <Routes>
         {/* ================= ROUTE PUBLIK ================= */}
         <Route path="/" element={<LandingPage />} />
@@ -148,6 +150,6 @@ export default function App() {
         {/* Jika mengetik URL asal-asalan, kembalikan ke landing page */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </HashRouter>
+    </AppRouter>
   );                                                                                      
 }

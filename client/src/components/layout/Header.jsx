@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Bell, LogOut, ChevronDown, CheckCircle2, XCircle, PackagePlus, Clock, TriangleAlert } from 'lucide-react';
+import { Menu, Bell, LogOut, ChevronDown, CheckCircle2, XCircle, PackagePlus, Clock, TriangleAlert, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../supabaseClient'; 
 
@@ -30,6 +30,12 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
   const [notifications, setNotifications] = useState([]);
   const [userProfile, setUserProfile] = useState({ name: 'User', email: '', avatar: null });
 
+  // State dan Ref untuk fitur Swipe/Hover to Delete
+  const [swipedId, setSwipedId] = useState(null);
+  const [showDeleteId, setShowDeleteId] = useState(null);
+  const touchStartX = useRef(0);
+  const hoverTimer = useRef(null);
+
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   useEffect(() => {
@@ -45,6 +51,7 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('profileUpdated', fetchUserDataAndNotifs);
+      if (hoverTimer.current) clearTimeout(hoverTimer.current); // Bersihkan timer saat komponen ditutup
     };
   }, []);
 
@@ -55,7 +62,6 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
       
       if (!email) return;
 
-      // 1. Ambil Data Profil untuk Header Kanan Atas
       const { data: profileData } = await supabase
         .from('user_roles')
         .select('username, avatar_url')
@@ -70,7 +76,14 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
         });
       }
 
-      // 2. Ambil Data Notifikasi dari Supabase
+      // AUTO-DELETE NOTIFIKASI YANG >= 1 HARI (24 JAM)
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      await supabase
+        .from('notifications')
+        .delete()
+        .lte('created_at', twentyFourHoursAgo)
+        .eq('user_email', email);
+
       const { data: notifData, error: notifError } = await supabase
         .from('notifications')
         .select('*')
@@ -80,7 +93,6 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
 
       let allNotifs = notifData && !notifError ? notifData : [];
 
-      // 🔥 3. JIKA ADMIN / MANAGER: Cek Stok Barang Kritis (<= 3)
       if (role === 'admin' || role === 'manager') {
         const { data: itemsData, error: itemsError } = await supabase
           .from('items')
@@ -88,22 +100,19 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
           .is('deleted_at', null);
 
         if (itemsData && !itemsError) {
-          const criticalItems = itemsData.filter(item => (parseInt(item.stock) || 0) <= 3);
+          const criticalItems = itemsData.filter(item => (parseInt(item.stock) || 0) <= 5);
           
           if (criticalItems.length > 0) {
-            // Buat 1 notifikasi khusus berupa peringatan sistem (tidak disimpan di database notif, hanya muncul di UI)
-            const stockAlertNotif = {
-              id: 'system-alert-stock', // ID statis agar mudah dikenali
+            const stockAlertNotifs = criticalItems.map(item => ({
+              id: `system-alert-stock-${item.id}`,
               title: 'Peringatan Stok Menipis!',
-              // 🔥 INI BAGIAN YANG DIPERBAIKI: Mengambil angka stok asli dari database
-              message: `Terdapat ${criticalItems.length} item menipis (termasuk ${criticalItems[0].name} sisa ${criticalItems[0].stock} unit). Segera lakukan restock.`,
+              message: `Stok ${item.name} sisa ${item.stock} unit. Segera lakukan restock.`,
               type: 'alert',
               is_read: false, 
               created_at: new Date().toISOString()
-            };
+            }));
 
-            // Sisipkan notifikasi peringatan ke barisan paling atas
-            allNotifs = [stockAlertNotif, ...allNotifs];
+            allNotifs = [...stockAlertNotifs, ...allNotifs];
           }
         }
       }
@@ -115,13 +124,52 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
     }
   };
 
+  // --- HANDLER UNTUK HOVER (PC) DENGAN JEDA 3 DETIK ---
+  const handleMouseEnter = (id) => {
+    // Mulai hitung mundur 3000ms (3 detik)
+    hoverTimer.current = setTimeout(() => {
+      setShowDeleteId(id);
+    }, 1000); 
+  };
+
+  const handleMouseLeave = () => {
+    // Batalkan timer jika mouse pergi sebelum 3 detik
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setShowDeleteId(null);
+  };
+
+  // --- HANDLER UNTUK TOUCH/SWIPE (HP) ---
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+    if (hoverTimer.current) clearTimeout(hoverTimer.current); // Matikan efek hover kalau user pakai touch
+  };
+
+  const handleTouchEnd = (e, id) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const distance = touchStartX.current - touchEndX;
+    
+    if (distance > 40) { // Geser ke kiri
+      setSwipedId(id);
+    } else if (distance < -40) { // Geser ke kanan (batal)
+      if (swipedId === id) setSwipedId(null);
+    }
+  };
+
+  const deleteNotif = async (id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    setSwipedId(null);
+    setShowDeleteId(null);
+
+    if (typeof id === 'string' && id.startsWith('system-alert-stock')) return;
+    
+    await supabase.from('notifications').delete().eq('id', id);
+  };
+
   const markAsRead = async (id) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     
-    // Jangan kirim update ke Supabase jika yang diklik adalah notifikasi sistem (alert stok)
-    if (id !== 'system-alert-stock') {
-      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-    }
+    if (typeof id === 'string' && id.startsWith('system-alert-stock')) return; 
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
   };
 
   const markAllAsRead = async () => {
@@ -166,7 +214,7 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
         {/* DROPDOWN NOTIFIKASI */}
         <div className="relative" ref={notifRef}>
           <button 
-            onClick={() => { setNotifOpen(!notifOpen); setDropdownOpen(false); }}
+            onClick={() => { setNotifOpen(!notifOpen); setDropdownOpen(false); setSwipedId(null); setShowDeleteId(null); }}
             className="p-2 rounded-full hover:bg-white/10 transition-all relative cursor-pointer"
           >
             <Bell size={24} />
@@ -193,32 +241,62 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
                 )}
               </div>
 
-              <div className="max-h-72 overflow-y-auto divide-y divide-zinc-100">
+              <div className="max-h-80 overflow-y-auto overflow-x-hidden">
                 {notifications.length === 0 ? (
                   <div className="p-6 text-center text-zinc-400 text-xs font-medium">Tidak ada notifikasi baru</div>
                 ) : (
                   notifications.map((notif) => (
                     <div 
-                      key={notif.id}
-                      onClick={() => markAsRead(notif.id)}
-                      className={`p-3.5 flex gap-3 hover:bg-zinc-50 transition-colors cursor-pointer relative ${
-                        !notif.is_read ? (notif.type === 'alert' ? 'bg-red-50/60' : 'bg-emerald-50/30') : 'bg-white'
-                      }`}
+                      key={notif.id} 
+                      className="relative overflow-hidden border-b border-zinc-100 last:border-b-0 bg-zinc-50"
+                      onMouseEnter={() => handleMouseEnter(notif.id)}
+                      onMouseLeave={handleMouseLeave}
                     >
-                      {!notif.is_read && <div className="absolute left-1 top-5 w-1.5 h-1.5 bg-blue-500 rounded-full" />}
                       
-                      {renderNotifIcon(notif.type)}
-                      <div className="flex-1 space-y-0.5">
-                        <div className="flex items-center justify-between">
-                          <p className={`text-xs font-bold ${notif.type === 'alert' ? 'text-red-700' : (!notif.is_read ? 'text-zinc-900' : 'text-zinc-400')}`}>
-                            {notif.title}
-                          </p>
-                          <span className="text-[9px] text-zinc-400 font-medium">{formatTimeAgo(notif.created_at)}</span>
+                      {/* Tombol Silang (X) Bulat di Belakang */}
+                      <div 
+                        onClick={(e) => { e.stopPropagation(); deleteNotif(notif.id); }}
+                        className="absolute right-0 top-0 bottom-0 w-[50px] flex items-center justify-center cursor-pointer"
+                      >
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                          <X size={18} />
                         </div>
-                        <p className={`text-[11px] leading-snug ${notif.type === 'alert' ? 'text-red-600 font-medium' : (!notif.is_read ? 'text-zinc-600' : 'text-zinc-400')}`}>
-                          {notif.message}
-                        </p>
                       </div>
+
+                      {/* Konten Notifikasi Yang Bisa Bergeser (Slide) */}
+                      <div 
+                        onTouchStart={handleTouchStart}
+                        onTouchEnd={(e) => handleTouchEnd(e, notif.id)}
+                        onClick={() => {
+                          if (swipedId === notif.id || showDeleteId === notif.id) {
+                            setSwipedId(null);
+                            setShowDeleteId(null);
+                          } else {
+                            markAsRead(notif.id);
+                          }
+                        }}
+                        className={`relative z-10 w-full p-3.5 flex gap-3 cursor-pointer transition-transform duration-300 ${
+                          swipedId === notif.id || showDeleteId === notif.id ? '-translate-x-[50px]' : 'translate-x-0'
+                        } ${
+                          !notif.is_read ? (notif.type === 'alert' ? 'bg-red-50/90' : 'bg-emerald-50/90') : 'bg-white'
+                        }`}
+                      >
+                        {!notif.is_read && <div className="absolute left-1 top-5 w-1.5 h-1.5 bg-blue-500 rounded-full" />}
+                        
+                        {renderNotifIcon(notif.type)}
+                        <div className="flex-1 space-y-0.5 pr-2">
+                          <div className="flex items-center justify-between">
+                            <p className={`text-xs font-bold ${notif.type === 'alert' ? 'text-red-700' : (!notif.is_read ? 'text-zinc-900' : 'text-zinc-400')}`}>
+                              {notif.title}
+                            </p>
+                            <span className="text-[9px] text-zinc-400 font-medium whitespace-nowrap">{formatTimeAgo(notif.created_at)}</span>
+                          </div>
+                          <p className={`text-[11px] leading-snug ${notif.type === 'alert' ? 'text-red-600 font-medium' : (!notif.is_read ? 'text-zinc-600' : 'text-zinc-400')}`}>
+                            {notif.message}
+                          </p>
+                        </div>
+                      </div>
+
                     </div>
                   ))
                 )}
