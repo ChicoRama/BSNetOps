@@ -6,7 +6,7 @@ export default function LandingPage() {
     <main className="relative h-screen overflow-hidden bg-[#f6faf8] text-slate-900">
       <div
         className="absolute inset-0 z-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('/images/landingpage-bg.jpeg')" }}
+        style={{ backgroundImage: "url('./images/landingpage-bg.jpeg')" }}
         aria-hidden="true"
       />
 
