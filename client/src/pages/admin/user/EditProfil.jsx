@@ -235,7 +235,7 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Jabatan</label>
               <div className="relative flex items-center">
                 <Briefcase size={16} className="absolute left-3 text-zinc-400" />
-                <input type="text" name="jabatan" value={profile.jabatan} onChange={handleChange} placeholder="Staff" disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
+                <input type="text" name="jabatan" value={profile.jabatan} onChange={handleChange} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
               </div>
             </div>
 
@@ -243,7 +243,7 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Alamat Email</label>
               <div className="relative flex items-center">
                 <Mail size={16} className="absolute left-3 text-zinc-400" />
-                <input type="email" name="email" value={profile.email} className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
+                <input type="email" name="email" value={profile.email} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
               </div>
             </div>
 
