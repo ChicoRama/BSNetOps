@@ -27,10 +27,25 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchUsersFromSupabase();
+
+    // 🔥 Realtime: dengarkan perubahan di tabel user_roles
+    const channel = supabase
+      .channel('realtime-user-roles')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_roles' },
+        () => fetchUsersFromSupabase(true) // background refresh, tanpa spinner loading
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const fetchUsersFromSupabase = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
+  const fetchUsersFromSupabase = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('user_roles')
@@ -56,9 +71,9 @@ export default function UserManagement() {
       }
     } catch (error) {
       console.error('Gagal memuat data user:', error.message);
-      toast.error('Gagal memuat data user dari database!');
+      if (!isBackground) toast.error('Gagal memuat data user dari database!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

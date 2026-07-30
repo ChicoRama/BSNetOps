@@ -30,10 +30,25 @@ export default function StokBarang({ role = 'admin' }) {
 
   useEffect(() => {
     fetchItems();
+
+    // 🔥 Realtime: dengarkan perubahan di tabel items (stok masuk/keluar, tambah/hapus barang)
+    const channel = supabase
+      .channel('realtime-stok-barang')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'items' },
+        () => fetchItems(true) // background refresh, tanpa spinner loading
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const fetchItems = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
+  const fetchItems = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('items')
@@ -44,9 +59,9 @@ export default function StokBarang({ role = 'admin' }) {
       if (data) setItems(data);
     } catch (error) {
       console.error('Gagal mengambil data inventaris:', error.message);
-      toast.error('Gagal mengambil data inventaris!');
+      if (!isBackground) toast.error('Gagal mengambil data inventaris!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

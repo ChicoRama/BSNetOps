@@ -20,10 +20,35 @@ export default function PenyetujuanBarang() {
   // 🔥 FETCH DATA DARI SUPABASE DAN SINKRONKAN STOK GUDANG REAL-TIME
   useEffect(() => {
     fetchRequestsFromSupabase();
+
+    // 🔥 Realtime: dengarkan perubahan di requests, request_items, dan items (stok)
+    const channel = supabase
+      .channel('realtime-penyetujuan-barang')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests' },
+        () => fetchRequestsFromSupabase(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'request_items' },
+        () => fetchRequestsFromSupabase(true)
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'items' },
+        () => fetchRequestsFromSupabase(true) // agar Stok Gudang ikut update realtime
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const fetchRequestsFromSupabase = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
+  const fetchRequestsFromSupabase = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       // 1. Ambil data requests beserta request_items
       const { data, error } = await supabase
@@ -103,9 +128,9 @@ export default function PenyetujuanBarang() {
       }
     } catch (error) {
       console.error('Gagal mengambil data permintaan dari database:', error.message);
-      toast.error('Gagal mengambil data permintaan!'); // 🔥 Tambahan error fetching
+      if (!isBackground) toast.error('Gagal mengambil data permintaan!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

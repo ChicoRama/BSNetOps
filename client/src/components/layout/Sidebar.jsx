@@ -21,7 +21,27 @@ export default function Sidebar({ role, isOpen, setIsOpen, currentView, setCurre
       fetchSidebarProfile();
     };
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    // 🔥 Event custom yang sama dipakai Header.jsx saat profil diperbarui (dalam tab yang sama)
+    window.addEventListener('profileUpdated', fetchSidebarProfile);
+
+    // 🔥 Realtime: dengarkan perubahan di tabel user_roles untuk email user yang sedang login
+    const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+    const email = activeUser?.email || activeUser?.mail || '';
+
+    const channel = supabase
+      .channel('realtime-sidebar-profile')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'user_roles', filter: email ? `email=eq.${email}` : undefined },
+        () => fetchSidebarProfile()
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('profileUpdated', fetchSidebarProfile);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchSidebarProfile = async () => {
@@ -49,6 +69,11 @@ export default function Sidebar({ role, isOpen, setIsOpen, currentView, setCurre
           name: data.username || 'Pengguna BSN',
           avatar: data.avatar_url || null
         });
+
+        // 🔥 Sinkronkan juga ke localStorage agar bagian lain aplikasi ikut update
+        const activeUserFull = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
+        const updatedLocal = { ...activeUserFull, namaLengkap: data.username || activeUserFull.namaLengkap };
+        localStorage.setItem('userProfile', JSON.stringify(updatedLocal));
       }
     } catch (error) {
       console.error('Gagal memuat profil sidebar:', error.message);

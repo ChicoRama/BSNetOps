@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusCircle, Hourglass, Package, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 import { supabase } from '../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast ditambahkan
 
 export default function UserDashboard({ setCurrentView }) {
   const [loading, setLoading] = useState(true);
@@ -18,12 +19,38 @@ export default function UserDashboard({ setCurrentView }) {
     ]
   });
 
+  // ==========================================
+  // 🔥 SUPABASE REALTIME DI-AKTIFKAN
+  // ==========================================
   useEffect(() => {
+    // 1. Tarik data pertama kali halaman dibuka
     fetchUserDataAndLastRequest();
+
+    // 2. Subscribe ke Supabase Realtime (Pantau tabel requests)
+    const dashboardChannel = supabase
+      .channel('realtime-user-dashboard')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests' },
+        (payload) => {
+          console.log('Realtime Update Diterima di User Dashboard:', payload);
+          // Tarik ulang data secara diam-diam (isBackground = true)
+          fetchUserDataAndLastRequest(true);
+        }
+      )
+      .subscribe();
+
+    // 3. Bersihkan channel saat komponen ditutup
+    return () => {
+      supabase.removeChannel(dashboardChannel);
+    };
   }, []);
 
-  const fetchUserDataAndLastRequest = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan
+  const fetchUserDataAndLastRequest = async (isBackground = false) => {
+    // Hanya tampilkan loading screen jika bukan background refresh
+    if (!isBackground) setLoading(true);
+
     try {
       const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
       const userEmail = activeUser?.email || activeUser?.mail || '';
@@ -31,7 +58,7 @@ export default function UserDashboard({ setCurrentView }) {
       setUserName(fallbackName);
 
       if (!userEmail) {
-        setLoading(false);
+        if (!isBackground) setLoading(false);
         return;
       }
 
@@ -100,8 +127,10 @@ export default function UserDashboard({ setCurrentView }) {
 
     } catch (error) {
       console.error('Gagal mengambil data dashboard user:', error.message);
+      // Hindari munculin toast error kalau ini background proses
+      if (!isBackground) toast.error('Gagal memuat data dashboard!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

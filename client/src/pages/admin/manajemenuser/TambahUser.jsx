@@ -118,18 +118,6 @@ export default function TambahUser({ onClose, onSuccess }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">ID Staff</label>
-              <input 
-                type="text" 
-                required
-                value={formData.staff_id}
-                onChange={(e) => setFormData({ ...formData, staff_id: e.target.value })}
-                placeholder="Contoh: BSN-001" 
-                className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-all" 
-              />
-            </div>
-            
-            <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">Unit / Cabang</label>
               <select 
                 required
@@ -145,21 +133,6 @@ export default function TambahUser({ onClose, onSuccess }) {
                 <option value="KCP Kendal">KCP Kendal</option>
                 <option value="KCP Kudus">KCP Kudus</option>
                 <option value="KCP Magelang">KCP Magelang</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">Hak Akses</label>
-              <select 
-                value={formData.role} 
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })} 
-                className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
-              >
-                <option value="User">User</option>
-                <option value="Admin">Admin</option>
-                <option value="Manager">Manager</option>
               </select>
             </div>
             <div>
