@@ -72,6 +72,25 @@ function DashboardLayout({ role, currentView, setCurrentView, children }) {
     localStorage.setItem('sidebarOpen', JSON.stringify(isOpen)); 
   }, [isOpen]);
 
+  // =========================================================
+  // 🔥 TAMBAHAN BARU: SISTEM AUTO-CORRECT STATE YANG NYANGKUT
+  // =========================================================
+  useEffect(() => {
+    // Daftar menu yang valid untuk masing-masing role
+    const validViews = {
+      admin: ['dashboard', 'stok-barang', 'manajemen-user', 'kategori-barang', 'log-aktifitas', 'edit-profil', 'penyetujuan-barang'],
+      manager: ['dashboard', 'approval-request', 'edit-profil', 'activity-log'],
+      user: ['dashboard', 'aset', 'ajukan-permintaan', 'riwayat-permintaan', 'edit-profil']
+    };
+
+    // Jika nilai currentView saat ini TIDAK ADA di dalam daftar menu role tersebut,
+    // paksa reset tampilannya kembali ke 'dashboard'
+    if (validViews[role] && !validViews[role].includes(currentView)) {
+      setCurrentView('dashboard');
+    }
+  }, [role, currentView, setCurrentView]);
+  // =========================================================
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-50 select-none">
       <Sidebar 
@@ -165,5 +184,5 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppRouter>
-  );                                                                                      
+  );
 }
