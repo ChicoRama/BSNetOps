@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Save } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function TambahUser({ onClose, onSuccess }) {
   const [formData, setFormData] = useState({ 
@@ -8,32 +9,31 @@ export default function TambahUser({ onClose, onSuccess }) {
     email: '', 
     password: '',
     staff_id: `BSN-${Math.floor(100 + Math.random() * 900)}`, 
-    unit: '', // Default kosong agar user wajib memilih
+    unit: '', 
     role: 'User', 
     status: 'Aktif' 
   });
   
   const [loading, setLoading] = useState(false);
 
-const handleSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
 
+    // 🔥 Mulai animasi loading dari Toast
+    const toastId = toast.loading('Mendaftarkan user baru...');
+
     try {
-      // 🔥 1. DAFTARKAN USER KE SISTEM LOGIN SUPABASE AUTH DULU
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
       });
 
-      // Jika email sudah pernah dipakai atau password kurang dari 6 karakter, akan error di sini
       if (authError) throw authError;
 
-      // 2. Siapkan data ID dan Status
       const isSuspended = formData.status === 'Suspend';
       const finalStaffId = formData.staff_id || `BSN-${Math.floor(100 + Math.random() * 900)}`;
 
-      // 3. Masukkan kelengkapan profilnya ke tabel 'user_roles'
       const { error: dbError } = await supabase
         .from('user_roles')
         .insert([
@@ -41,7 +41,7 @@ const handleSubmit = async (e) => {
             staff_id: finalStaffId,
             username: formData.name,
             email: formData.email,
-            role: formData.role.toLowerCase(), // Menyimpan 'user', 'admin', atau 'manager'
+            role: formData.role.toLowerCase(),
             unit: formData.unit,
             is_suspended: isSuspended
           }
@@ -49,14 +49,16 @@ const handleSubmit = async (e) => {
 
       if (dbError) throw dbError;
 
-      alert(`Sukses! User baru dengan ID ${finalStaffId} berhasil didaftarkan.`);
+      // 🔥 Sukses Toast
+      toast.success(`User baru dengan ID ${finalStaffId} berhasil didaftarkan.`, { id: toastId });
       
       if (onSuccess) onSuccess(); 
       onClose(); 
 
     } catch (error) {
       console.error('Gagal mendaftarkan user baru:', error.message);
-      alert('Terjadi kesalahan: ' + error.message);
+      // 🔥 Error Toast
+      toast.error(`Gagal mendaftarkan user: ${error.message}`, { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -66,7 +68,6 @@ const handleSubmit = async (e) => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/40 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-200">
         
-        {/* Header Modal */}
         <div className="p-5 border-b flex justify-between items-center bg-zinc-50/50">
           <div>
             <h3 className="text-lg font-bold text-zinc-950">Daftarkan User Baru</h3>
@@ -77,10 +78,8 @@ const handleSubmit = async (e) => {
           </button>
         </div>
 
-        {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           
-          {/* Nama Lengkap */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 mb-1">Nama Lengkap</label>
             <input 
@@ -93,7 +92,6 @@ const handleSubmit = async (e) => {
             />
           </div>
 
-          {/* Email Resmi BSN */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 mb-1">Email Resmi BSN</label>
             <input 
@@ -106,7 +104,6 @@ const handleSubmit = async (e) => {
             />
           </div>
 
-          {/* Password Awal */}
           <div>
             <label className="block text-xs font-bold text-zinc-700 mb-1">Password Awal</label>
             <input 
@@ -119,7 +116,6 @@ const handleSubmit = async (e) => {
             />
           </div>
 
-          {/* Baris 1: ID Staff & Unit / Cabang */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">ID Staff</label>
@@ -133,7 +129,6 @@ const handleSubmit = async (e) => {
               />
             </div>
             
-            {/* 🔥 Bagian ini diubah menjadi Dropdown (Select) */}
             <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">Unit / Cabang</label>
               <select 
@@ -154,7 +149,6 @@ const handleSubmit = async (e) => {
             </div>
           </div>
 
-          {/* Baris 2: Hak Akses & Status Awal */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">Hak Akses</label>
@@ -181,7 +175,6 @@ const handleSubmit = async (e) => {
             </div>
           </div>
 
-          {/* Footer Tombol Aksi */}
           <div className="pt-4 flex justify-end gap-3 border-t border-zinc-100 mt-4">
             <button 
               type="button" 

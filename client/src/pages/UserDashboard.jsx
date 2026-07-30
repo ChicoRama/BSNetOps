@@ -110,7 +110,7 @@ export default function UserDashboard({ setCurrentView }) {
       {/* 1. Area Greetings */}
       <div className="bg-gradient-to-r from-[#00664b] to-[#004d38] p-6 text-white rounded-xl shadow-md border border-[#00553e] transition-all hover:scale-[1.005]">
         <h2 className="text-2xl font-bold">Halo, {userName} 👋</h2>
-        <p className="text-green-100 text-sm mt-1">Mau ambil atau cek inventaris barang apa hari ini? Semangat ya!</p>
+        <p className="text-green-100 text-sm mt-1">Mau ambil atau cek barang apa hari ini? Semangat ya!</p>
       </div>
 
       {/* 2. Quick Actions Menu */}

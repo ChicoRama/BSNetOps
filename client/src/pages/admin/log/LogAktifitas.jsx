@@ -93,12 +93,9 @@ export default function LogAktifitas() {
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-white border border-zinc-200 text-[#00664b] rounded-xl shadow-md">
-            <Activity size={24} />
-          </div>
           <div>
-            <h2 className="text-xl font-bold text-zinc-900">Activity Log & Laporan</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">Arsip riwayat transaksi barang masuk dan keluar gudang</p>
+            <h2 className="text-xl font-bold text-white">Activity Log & Laporan</h2>
+            <p className="text-xs text-white/80 mt-0.5">Arsip riwayat transaksi barang masuk dan keluar gudang</p>
           </div>
         </div>
 

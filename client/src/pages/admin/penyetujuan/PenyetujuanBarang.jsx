@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, CheckSquare, X, Check, MoreVertical, Download } from 'lucide-react';
 import TemplateDokumenA4 from '../../user/permintaan/TemplateDokumenA4';
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function PenyetujuanBarang() {
   const printRef = useRef();
@@ -102,6 +103,7 @@ export default function PenyetujuanBarang() {
       }
     } catch (error) {
       console.error('Gagal mengambil data permintaan dari database:', error.message);
+      toast.error('Gagal mengambil data permintaan!'); // 🔥 Tambahan error fetching
     } finally {
       setLoading(false);
     }
@@ -153,16 +155,19 @@ export default function PenyetujuanBarang() {
     const isExceedingRequest = selectedRequest.items.some(item => item.jmlDisetujui > item.jmlDiminta);
     
     if (isExceedingStock) {
-      alert("Gagal: Ada barang yang jumlah disetujuinya melebihi stok gudang saat ini!");
+      toast.error("Gagal: Ada barang yang jumlah disetujuinya melebihi stok gudang saat ini!"); // 🔥 Ubah alert jadi toast
       return;
     }
     
     if (isExceedingRequest) {
-      alert("Gagal: Jumlah disetujui tidak boleh melebihi jumlah yang diminta pemohon!");
+      toast.error("Gagal: Jumlah disetujui tidak boleh melebihi jumlah yang diminta pemohon!"); // 🔥 Ubah alert jadi toast
       return;
     }
 
     const todayStr = new Date().toLocaleDateString('id-ID');
+    
+    // 🔥 Jalankan animasi loading
+    const toastId = toast.loading('Memproses persetujuan...'); 
 
     try {
       const { error: reqError } = await supabase
@@ -186,7 +191,8 @@ export default function PenyetujuanBarang() {
           .eq('id', item.idItem);
       }
 
-      alert(`Permintaan ${selectedRequest.id} berhasil disetujui Admin dan diteruskan ke Manager untuk ACC Final.`);
+      // 🔥 Ubah alert jadi toast sukses
+      toast.success(`Permintaan ${selectedRequest.id} disetujui & diteruskan ke Manager!`, { id: toastId });
       
       setIsModalOpen(false);
       setSelectedRequest(null);
@@ -194,7 +200,8 @@ export default function PenyetujuanBarang() {
 
     } catch (error) {
       console.error('Gagal memperbarui status penyerahan:', error.message);
-      alert('Terjadi kesalahan saat menyimpan ke database.');
+      // 🔥 Ubah alert jadi toast error
+      toast.error('Terjadi kesalahan saat menyimpan ke database.', { id: toastId });
     }
   };
 
@@ -202,6 +209,8 @@ export default function PenyetujuanBarang() {
     const element = printRef.current;
     if (!element) return;
     setIsExporting(true);
+    
+    const toastId = toast.loading('Menyiapkan file PDF...'); // 🔥 Tambahan toast pas generate PDF
 
     const opt = {
       margin:       0,
@@ -214,10 +223,12 @@ export default function PenyetujuanBarang() {
     html2pdf().set(opt).from(element).save().then(() => {
       setIsExporting(false);
       setIsMenuOpen(false);
+      toast.success('PDF berhasil diunduh!', { id: toastId }); // 🔥 Sukses toast
     }).catch((err) => {
       console.error("Error:", err);
       setIsExporting(false);
       setIsMenuOpen(false);
+      toast.error('Gagal mengunduh PDF.', { id: toastId }); // 🔥 Error toast
     });
   };
 

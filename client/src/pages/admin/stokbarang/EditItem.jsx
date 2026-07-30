@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
-import { supabase } from '../../../../supabaseClient'; // Sesuaikan jalur impor supabaseClient Anda
+import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function EditItem({ itemData, onClose, onSuccess }) {
   const [formData, setFormData] = useState({ 
@@ -30,6 +31,9 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
   const handleUpdate = async (e) => {
     e.preventDefault();
     setLoading(true);
+    
+    // 🔥 Jalankan animasi loading dari toast
+    const toastId = toast.loading('Sedang memperbarui data...');
 
     try {
       const stokBaru = parseInt(formData.stock) || 0;
@@ -72,14 +76,16 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
         }
       }
 
-      alert(`Sukses! Data item ${formData.id} berhasil diperbarui.`);
+      // 🔥 Ubah loading jadi sukses
+      toast.success(`Data item ${formData.id} berhasil diperbarui!`, { id: toastId });
       
       if (onSuccess) onSuccess(); 
       onClose(); 
 
     } catch (error) {
       console.error('Gagal memperbarui item ke Supabase:', error.message);
-      alert('Terjadi kesalahan saat memperbarui database: ' + error.message);
+      // 🔥 Ubah loading jadi error
+      toast.error('Gagal memperbarui database: ' + error.message, { id: toastId });
     } finally {
       setLoading(false);
     }
@@ -139,7 +145,6 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
             </div>
           </div>
 
-          {/* Baris Input Lokasi & Tanggal Edit */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-zinc-700 mb-1">Lokasi Rak/Penyimpanan</label>

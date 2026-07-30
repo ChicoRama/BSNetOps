@@ -3,6 +3,7 @@ import { Search, Check, X, AlertCircle, X as CloseIcon, CheckSquare, MoreVertica
 import html2pdf from 'html2pdf.js';
 import TemplateDokumenA4 from '../../user/permintaan/TemplateDokumenA4'; 
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function ApprovalRequest() {
   const printRef = useRef();
@@ -26,12 +27,35 @@ export default function ApprovalRequest() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  // ==========================================
+  // 🔥 SUPABASE REALTIME DI-AKTIFKAN!
+  // ==========================================
   useEffect(() => {
+    // 1. Tarik data pertama kali halaman dibuka
     fetchRequestsFromSupabase();
+
+    // 2. Subscribe ke Supabase Realtime untuk tabel 'requests'
+    const requestChannel = supabase
+      .channel('realtime-approval-requests')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests' },
+        (payload) => {
+          fetchRequestsFromSupabase(true);
+        }
+      )
+      .subscribe();
+
+    // 3. Bersihkan channel saat komponen ditutup
+    return () => {
+      supabase.removeChannel(requestChannel);
+    };
   }, []);
 
-  const fetchRequestsFromSupabase = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan
+  const fetchRequestsFromSupabase = async (isBackground = false) => {
+    if (!isBackground) setLoading(true); // Hanya tampilkan tulisan loading kalau bukan background refresh
+    
     try {
       const { data, error } = await supabase
         .from('requests')
@@ -59,23 +83,22 @@ export default function ApprovalRequest() {
 
       if (data) {
         const formattedData = data.map(req => {
-          // 🔥 MENCARI PRIORITAS PALING URGENT DARI SEMUA BARANG DALAM 1 REQUEST
           const itemPriorities = req.request_items.map(i => i.prioritas || 'Rendah');
           let mainPriority = 'Rendah';
 
           if (itemPriorities.includes('Tinggi')) {
-            mainPriority = 'Tinggi'; // Jika ada minimal 1 barang prioritas tinggi, maka tiket jadi Tinggi
+            mainPriority = 'Tinggi'; 
           } else if (itemPriorities.includes('Sedang')) {
-            mainPriority = 'Sedang'; // Jika tidak ada tinggi, tapi ada sedang, jadi Sedang
+            mainPriority = 'Sedang'; 
           } else {
-            mainPriority = 'Rendah'; // Sisanya Rendah
+            mainPriority = 'Rendah'; 
           }
 
           return {
             id: req.id,
             namaPemohon: req.nama_pemohon,
             unit: req.unit,
-            prioritas: mainPriority, // Prioritas utama yang paling urgent
+            prioritas: mainPriority, 
             tanggal: req.tanggal,
             jam: req.jam,
             status: req.status,
@@ -86,7 +109,7 @@ export default function ApprovalRequest() {
               namaBarang: item.nama_barang,
               jumlahDiminta: item.jumlah_diminta,
               jumlahDisetujui: item.jumlah_disetujui, 
-              prioritas: item.prioritas || 'Rendah', // Prioritas per individual barang
+              prioritas: item.prioritas || 'Rendah', 
               remark: item.remark || ''
             }))
           };
@@ -95,8 +118,9 @@ export default function ApprovalRequest() {
       }
     } catch (error) {
       console.error('Gagal memuat data permintaan:', error.message);
+      if (!isBackground) toast.error('Gagal memuat data permintaan dari database!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -140,6 +164,7 @@ export default function ApprovalRequest() {
   };
 
   const handleFinalAction = async () => {
+    const toastId = toast.loading('Memproses keputusan...');
     try {
       const targetRequests = requests.filter(r => confirmTargets.includes(r.id));
 
@@ -155,7 +180,7 @@ export default function ApprovalRequest() {
               .maybeSingle();
 
             if (itemData && itemData.stock < qtyToProcess) {
-              alert(`Gagal ACC: Stok "${item.namaBarang}" tidak mencukupi! (Sisa stok: ${itemData.stock}, Disetujui Admin: ${qtyToProcess})`);
+              toast.error(`Gagal ACC: Stok "${item.namaBarang}" tidak mencukupi! (Sisa: ${itemData.stock}, Disetujui: ${qtyToProcess})`, { id: toastId, duration: 5000 });
               return; 
             }
           }
@@ -203,16 +228,17 @@ export default function ApprovalRequest() {
 
       if (error) throw error;
 
-      alert(`Permintaan berhasil ${confirmType === 'Selesai' ? 'di-ACC & Stok telah dipotong' : 'ditolak'}!`);
+      toast.success(`Permintaan berhasil ${confirmType === 'Selesai' ? 'di-ACC & Stok telah dipotong' : 'ditolak'}!`, { id: toastId });
 
       setSelectedRows([]);
       setIsConfirmOpen(false);
       setIsModalOpen(false);
-      fetchRequestsFromSupabase();
+      // Realtime otomatis nge-fetch, tapi kita jalankan fetch manual 1x biar seketika sinkron.
+      fetchRequestsFromSupabase(true);
 
     } catch (error) {
       console.error('Gagal memproses:', error.message);
-      alert('Terjadi kesalahan saat memproses data ke database.');
+      toast.error('Terjadi kesalahan saat memproses data ke database.', { id: toastId });
     }
   };
 
@@ -220,6 +246,8 @@ export default function ApprovalRequest() {
     const element = printRef.current;
     if (!element) return;
     setIsExporting(true);
+
+    const toastId = toast.loading('Menyiapkan file PDF...');
 
     const opt = {
       margin:       0,
@@ -232,27 +260,25 @@ export default function ApprovalRequest() {
     html2pdf().set(opt).from(element).save().then(() => {
       setIsExporting(false);
       setIsMenuOpen(false);
+      toast.success('PDF berhasil diunduh!', { id: toastId });
     }).catch((err) => {
       console.error("Error:", err);
       setIsExporting(false);
       setIsMenuOpen(false);
+      toast.error('Gagal mengunduh PDF.', { id: toastId });
     });
   };
 
-const activeDetail = requests.find(item => item.id === selectedId);
+  const activeDetail = requests.find(item => item.id === selectedId);
 
-  // 1. Ambil nama Manager yang sedang login dari localStorage
   const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
   const namaManager = activeUser.namaLengkap || activeUser.name || activeUser.username || 'Manager';
 
-  // 2. Cek apakah status request sudah disetujui sepenuhnya
   const isApproved = activeDetail?.status?.toLowerCase() === 'selesai';
 
-  // 3. Generate URL gambar QR Code jika statusnya sudah di-ACC
   const qrAdmin = isApproved ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Admin_Agus_ID:${activeDetail?.id}` : null;
   const qrManager = isApproved ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Manager_${namaManager.replace(/\s+/g, '_')}_ID:${activeDetail?.id}` : null;
 
-  // 4. Mapping data untuk dikirim ke TemplateDokumenA4
   const mappedFormData = activeDetail ? {
     divisi: activeDetail.unit,
     alasanDibutuhkan: activeDetail.keperluan,
@@ -370,7 +396,7 @@ const activeDetail = requests.find(item => item.id === selectedId);
                   <th className="py-3 px-2">ID Permintaan</th>
                   <th className="py-3 px-4">Pemohon</th>
                   <th className="py-3 px-4">Daftar Barang</th>
-                  <th className="py-3 px-4 text-center">Prioritas Utama (Urgent)</th>
+                  <th className="py-3 px-4 text-center">Prioritas Utama</th>
                   <th className="py-3 px-4">Tanggal Pengajuan</th>
                   <th className="py-3 px-4 text-center">Status</th>
                 </tr>
@@ -401,9 +427,10 @@ const activeDetail = requests.find(item => item.id === selectedId);
                         )}
                       </td>
                       <td className="py-4 px-2 font-mono font-bold text-zinc-900">{item.id}</td>
-                      <td className="py-4 px-4">
+                      <td className="py-4 px-4 max-w-[150px]">
                         <div className="flex flex-col">
-                          <span className="font-bold text-zinc-800">{item.namaPemohon}</span>
+                          {/* 🔥 Ditambahkan break-words jika teks kepanjangan */}
+                          <span className="font-bold text-zinc-800 break-words">{item.namaPemohon}</span>
                           <span className="text-[10px] text-zinc-400 font-medium">{item.unit}</span>
                         </div>
                       </td>
@@ -414,7 +441,6 @@ const activeDetail = requests.find(item => item.id === selectedId);
                         <span className="text-[10px] text-zinc-400 font-medium">Total: {item.items.length} jenis barang</span>
                       </td>
                       <td className="py-4 px-4 text-center">
-                        {/* 🌟 BADGE PRIORITAS UTAMA (MENAMPILKAN YANG PALING URGENT) */}
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black border ${
                           item.prioritas === 'Tinggi' ? 'bg-red-50 text-red-600 border-red-200' : 
                           item.prioritas === 'Sedang' ? 'bg-yellow-50 text-yellow-600 border-yellow-200' : 
@@ -475,7 +501,8 @@ const activeDetail = requests.find(item => item.id === selectedId);
               <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-4">
                 <div>
                   <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Nama Pemohon</span>
-                  <span className="text-zinc-900 font-bold text-sm">{activeDetail.namaPemohon}</span>
+                  {/* 🔥 Ditambahkan break-words jika teks kepanjangan */}
+                  <span className="text-zinc-900 font-bold text-sm break-words">{activeDetail.namaPemohon}</span>
                 </div>
                 <div>
                   <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Unit / Cabang</span>
@@ -511,7 +538,8 @@ const activeDetail = requests.find(item => item.id === selectedId);
                       {activeDetail.items.map((item, index) => (
                         <tr key={index} className="hover:bg-zinc-50">
                           <td className="p-3 text-center text-zinc-400 font-mono">{index + 1}</td>
-                          <td className="p-3 font-bold text-zinc-700">{item.namaBarang}</td>
+                          {/* 🔥 Ditambahkan break-words agar kalau nama panjang tabel tidak stretch */}
+                          <td className="p-3 font-bold text-zinc-700 break-words max-w-[150px]">{item.namaBarang}</td>
                           <td className="p-3 text-center">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               item.prioritas === 'Tinggi' ? 'bg-red-50 text-red-600' :
@@ -522,7 +550,7 @@ const activeDetail = requests.find(item => item.id === selectedId);
                           </td>
                           <td className="p-3 text-center font-bold text-zinc-500">{item.jumlahDiminta}</td>
                           <td className="p-3 text-center font-bold text-[#00664b]">{item.jumlahDisetujui ?? item.jumlahDiminta} Unit</td>
-                          <td className="p-3 text-zinc-500 italic">{item.remark || '-'}</td>
+                          <td className="p-3 text-zinc-500 italic break-words max-w-[150px]">{item.remark || '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -571,7 +599,7 @@ const activeDetail = requests.find(item => item.id === selectedId);
         </div>
       )}
 
-      {/* MODAL KONFIRMASI */}
+      {/* MODAL KONFIRMASI CUSTOM */}
       {isConfirmOpen && confirmTargets.length > 0 && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-in zoom-in-95 duration-150 text-center">

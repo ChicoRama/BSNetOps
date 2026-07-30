@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { Toaster } from 'react-hot-toast';
 
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
@@ -96,6 +97,18 @@ export default function App() {
 
   return (
     <AppRouter>
+      <Toaster 
+        position="top-right" 
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#333',
+            color: '#fff',
+            borderRadius: '10px',
+          },
+        }} 
+      />
+
       <Routes>
         {/* ================= ROUTE PUBLIK ================= */}
         <Route path="/" element={<LandingPage />} />

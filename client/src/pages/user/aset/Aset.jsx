@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Filter, Calendar, Package, X, Check, ShoppingCart } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function Aset({ setCurrentView }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -51,7 +52,7 @@ export default function Aset({ setCurrentView }) {
           kode: item.id,
           kategori: item.category || 'Umum',
           stok: `${item.stock || 0} Unit`,
-          rawStok: parseInt(item.stock) || 0, // 🔥 Menyimpan nilai angka asli stok untuk filter
+          rawStok: parseInt(item.stock) || 0, 
           tglUpdate: item.date || 'Hari ini',
           gambar: item.image || 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?q=80&w=400&auto=format&fit=crop'
         }));
@@ -59,6 +60,7 @@ export default function Aset({ setCurrentView }) {
       }
     } catch (error) {
       console.error('Gagal mengambil data aset:', error.message);
+      toast.error('Gagal mengambil data aset!');
     } finally {
       setLoading(false);
     }
@@ -106,6 +108,7 @@ export default function Aset({ setCurrentView }) {
           jumlah: 1 
         }];
         setCart(updatedCart);
+        toast.success(`"${selectedAsset.nama}" dimasukkan ke permintaan.`);
       }
       setSelectedAsset(null); 
     }
@@ -114,13 +117,15 @@ export default function Aset({ setCurrentView }) {
   const handleRemoveFromCart = (kodeAset) => {
     const updatedCart = cart.filter(item => item.kodeAset !== kodeAset);
     setCart(updatedCart);
+    toast.success('Barang dihapus dari daftar permintaan.');
   };
 
   const handleRedirectToForm = () => {
     if (cart.length > 0) {
       setCurrentView('ajukan-permintaan');
     } else {
-      alert("Keranjang belanja Anda masih kosong. Silakan pilih aset terlebih dahulu!");
+      // 🔥 Ganti alert standar dengan toast.error
+      toast.error("Keranjang belanja Anda masih kosong. Silakan pilih aset terlebih dahulu!");
     }
   };
 
@@ -235,16 +240,14 @@ export default function Aset({ setCurrentView }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
           {filteredAset.map((aset) => {
             const isAddedInCart = cart.some(item => item.kodeAset === aset.kode);
-            const isHabis = aset.rawStok === 0; // 🔥 Pengecekan barang habis
+            const isHabis = aset.rawStok === 0; 
 
             return (
               <div 
                 key={aset.id}
-                // 🔥 Kunci klik jika stok barang 0
                 onClick={() => {
                   if (!isHabis) handleOpenModal(aset);
                 }}
-                // 🔥 Berikan class styling redup & tidak bisa diklik jika habis
                 className={`bg-white border rounded-3xl p-4 flex gap-4 transition-all duration-300 select-none relative overflow-hidden ${
                   isHabis 
                     ? 'opacity-60 grayscale cursor-not-allowed bg-zinc-50 border-zinc-200' 
@@ -310,13 +313,13 @@ export default function Aset({ setCurrentView }) {
 
             <div className="flex-1 flex flex-col justify-between py-1">
               <div>
-                <h3 className="font-extrabold text-xl capitalize text-zinc-900 border-b border-zinc-900 pb-1.5 tracking-tight">
+                <h3 className="font-extrabold text-xl capitalize text-zinc-900 border-b border-zinc-900 pb-1.5 tracking-tight break-all pr-8">
                   {selectedAsset.nama}
                 </h3>
 
                 <div className="mt-6 space-y-3">
                   <p className="text-xs text-zinc-500 font-medium">
-                    Masukkan aset inventaris ini ke list item permintaan untuk pengajuan bon barang sekaligus.
+                    Masukkan barang ini ke list item permintaan untuk pengajuan bon barang sekaligus.
                   </p>
 
                   <div className="space-y-2 pt-6">

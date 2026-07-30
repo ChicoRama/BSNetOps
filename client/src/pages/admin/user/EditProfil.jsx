@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Mail, Shield, Camera, Save, Building, Briefcase, Phone } from 'lucide-react';
-import { supabase } from '../../../../supabaseClient'; // Sesuaikan path import supabaseClient kamu
+import { supabase } from '../../../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 export default function EditProfil() {
   const [loading, setLoading] = useState(true);
@@ -28,7 +29,6 @@ export default function EditProfil() {
   const fetchProfileFromSupabase = async () => {
     setLoading(true);
     try {
-      // Ambil email dari sesi aktif yang tersimpan saat login/register
       const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
       const email = activeUser?.email || activeUser?.mail || '';
       
@@ -39,7 +39,6 @@ export default function EditProfil() {
 
       setUserEmail(email);
 
-      // Tarik data asli dari tabel 'user_roles' berdasarkan email user yang sedang login
       const { data, error } = await supabase
         .from('user_roles')
         .select('*')
@@ -49,7 +48,6 @@ export default function EditProfil() {
       if (error) throw error;
 
       if (data) {
-        // Autofill field form dengan data awal dari database
         setProfile({
           namaLengkap: data.username || data.nama_lengkap || '',
           nipPegawai: data.staff_id || data.nip_pegawai || '-',
@@ -62,6 +60,7 @@ export default function EditProfil() {
       }
     } catch (error) {
       console.error('Gagal mengambil data autofill profil:', error.message);
+      toast.error('Gagal memuat data profil!');
     } finally {
       setLoading(false);
     }
@@ -85,11 +84,13 @@ export default function EditProfil() {
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
+    
+    // 🔥 Jalankan animasi loading toast
+    const toastId = toast.loading('Menyimpan perubahan profil...');
 
     try {
       let avatarUrl = profile.avatar;
 
-      // Jika user memilih foto baru, upload ke Supabase Storage bucket 'avatars'
       if (selectedFile) {
         const fileExt = selectedFile.name.split('.').pop();
         const fileName = `${userEmail.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.${fileExt}`;
@@ -108,7 +109,6 @@ export default function EditProfil() {
         avatarUrl = publicURLData.publicUrl;
       }
 
-      // Update data terbaru ke tabel 'user_roles' Supabase
       const { error: updateError } = await supabase
         .from('user_roles')
         .update({
@@ -122,7 +122,6 @@ export default function EditProfil() {
 
       if (updateError) throw updateError;
 
-      // Sinkronkan ke localStorage supaya Sidebar langsung ikut terupdate
       localStorage.setItem('userProfile', JSON.stringify({
         email: userEmail,
         namaLengkap: profile.namaLengkap,
@@ -131,14 +130,16 @@ export default function EditProfil() {
         avatar: avatarUrl
       }));
 
-      alert('Profil berhasil diperbarui dan tersimpan ke database!');
+      // 🔥 Ubah loading jadi toast sukses
+      toast.success('Profil berhasil diperbarui dan tersimpan ke database!', { id: toastId });
 
       window.dispatchEvent(new Event('profileUpdated'));
 
       fetchProfileFromSupabase();
     } catch (error) {
       console.error('Gagal menyimpan profil:', error.message);
-      alert('Terjadi kesalahan saat menyimpan ke database: ' + error.message);
+      // 🔥 Ubah loading jadi toast error
+      toast.error('Gagal menyimpan: ' + error.message, { id: toastId });
     } finally {
       setSaving(false);
     }
@@ -234,7 +235,7 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Jabatan</label>
               <div className="relative flex items-center">
                 <Briefcase size={16} className="absolute left-3 text-zinc-400" />
-                <input type="text" name="jabatan" value={profile.jabatan} onChange={handleChange} placeholder="Staff" disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
+                <input type="text" name="jabatan" value={profile.jabatan} onChange={handleChange} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
               </div>
             </div>
 
@@ -242,7 +243,7 @@ export default function EditProfil() {
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Alamat Email</label>
               <div className="relative flex items-center">
                 <Mail size={16} className="absolute left-3 text-zinc-400" />
-                <input type="email" name="email" value={profile.email} className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
+                <input type="email" name="email" value={profile.email} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
               </div>
             </div>
 

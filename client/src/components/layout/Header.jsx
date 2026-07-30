@@ -207,7 +207,7 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
             <Menu size={24} />
           </button>
         )}
-        <img src="/logobsn.png" alt="Logo" className="h-8 w-auto" />
+        <img src="./logobsn.png" alt="Logo" className="h-8 w-auto" />
       </div>
       
       <div className="flex items-center gap-4">
