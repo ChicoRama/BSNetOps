@@ -29,13 +29,19 @@ export default function LandingPage() {
                 <p>© 2024 Bank Syariah Nasional. All rights reserved.</p>
 
                 <div className="flex items-center gap-5">
-                <a className="transition hover:text-white" href="#privasi">
+                <a 
+                  href="https://bankbsn.co.id/informasi/kebijakan-privasi"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="transition hover:text-white">
                     Kebijakan Privasi
                 </a>
 
                 <span className="text-white/45">|</span>
 
-                <a className="transition hover:text-white" href="#syarat">
+                <a 
+                  className="transition hover:text-white" href="#syarat"
+                >
                     Syarat & Ketentuan
                 </a>
 
