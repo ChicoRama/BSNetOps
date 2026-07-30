@@ -16,12 +16,38 @@ export default function RiwayatPermintaan() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  // ==========================================
+  // 🔥 SUPABASE REALTIME DI-AKTIFKAN
+  // ==========================================
   useEffect(() => {
+    // 1. Tarik data pertama kali halaman dibuka
     fetchUserRequests();
+
+    // 2. Subscribe ke Supabase Realtime untuk tabel 'requests'
+    const requestChannel = supabase
+      .channel('realtime-approval-requests')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests' },
+        (payload) => {
+          console.log('Realtime Update Diterima di Riwayat:', payload);
+          // Tarik ulang data secara diam-diam (isBackground = true)
+          fetchUserRequests(true);
+        }
+      )
+      .subscribe();
+
+    // 3. Bersihkan channel saat komponen ditutup
+    return () => {
+      supabase.removeChannel(requestChannel);
+    };
   }, []);
 
-  const fetchUserRequests = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan
+  const fetchUserRequests = async (isBackground = false) => {
+    // Hanya tampilkan loading screen jika bukan background refresh
+    if (!isBackground) setLoading(true); 
+    
     try {
       const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
       const activeEmail = activeUser?.email || activeUser?.mail || '';
@@ -112,9 +138,10 @@ export default function RiwayatPermintaan() {
       }
     } catch (err) {
       console.error('Gagal mengambil riwayat dari database:', err.message);
-      toast.error('Gagal mengambil riwayat permintaan!');
+      // Hindari munculin toast error kalau ini background proses (misal koneksi sempet putus sedetik)
+      if (!isBackground) toast.error('Gagal mengambil riwayat permintaan!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

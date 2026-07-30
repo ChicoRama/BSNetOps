@@ -12,10 +12,25 @@ export default function AsetKantorManager() {
   // Ambil data asli dari tabel 'items' Supabase
   useEffect(() => {
     fetchAssetsFromSupabase();
+
+    // 🔥 Realtime: dengarkan perubahan di tabel items (stok/aset)
+    const channel = supabase
+      .channel('realtime-aset-kantor')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'items' },
+        () => fetchAssetsFromSupabase(true) // background refresh, tanpa spinner loading
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const fetchAssetsFromSupabase = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
+  const fetchAssetsFromSupabase = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const { data, error } = await supabase
         .from('items')
@@ -39,9 +54,9 @@ export default function AsetKantorManager() {
       }
     } catch (error) {
       console.error('Gagal memuat data aset kantor:', error.message);
-      toast.error('Gagal memuat data aset dari database!');
+      if (!isBackground) toast.error('Gagal memuat data aset dari database!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -209,4 +224,4 @@ export default function AsetKantorManager() {
 
     </div>
   );
-}
+}   

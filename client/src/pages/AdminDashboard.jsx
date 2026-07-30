@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { supabase } from '../../supabaseClient';
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 const COLORS = ['#00664b', '#3B82F6', '#FFBF00', '#8B5CF6', '#EC4899', '#14B8A6'];
 
@@ -12,12 +13,38 @@ export default function AdminDashboard({ role = 'admin' }) {
   const [categoryData, setCategoryData] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
 
+  // ==========================================
+  // 🔥 SUPABASE REALTIME DI-AKTIFKAN
+  // ==========================================
   useEffect(() => {
+    // 1. Tarik data pertama kali halaman dibuka
     fetchDashboardData();
+
+    // 2. Subscribe ke Supabase Realtime (Memantau semua perubahan di database)
+    const dashboardChannel = supabase
+      .channel('realtime-admin-dashboard')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' }, // Memantau semua tabel yang terhubung ke dashboard
+        (payload) => {
+          console.log('Realtime Update Diterima di Dashboard:', payload);
+          // Tarik ulang data secara diam-diam (isBackground = true)
+          fetchDashboardData(true);
+        }
+      )
+      .subscribe();
+
+    // 3. Bersihkan channel saat komponen ditutup
+    return () => {
+      supabase.removeChannel(dashboardChannel);
+    };
   }, []);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan
+  const fetchDashboardData = async (isBackground = false) => {
+    // Hanya tampilkan loading screen jika bukan background refresh
+    if (!isBackground) setLoading(true);
+
     try {
       // 1. Ambil data dari tabel 'items' untuk menghitung stok & distribusi kategori
       const { data: itemsData, error: itemsError } = await supabase
@@ -88,7 +115,7 @@ export default function AdminDashboard({ role = 'admin' }) {
           return {
             id: log.transaction_id || log.id,
             item: log.item_name,
-            unit: unitDisplay, // Hasilnya akan akurat (contoh: "KC Semarang")
+            unit: unitDisplay, 
             type: logType === 'Pengeluaran' ? 'Keluar' : logType,
             date: displayDate
           };
@@ -101,8 +128,10 @@ export default function AdminDashboard({ role = 'admin' }) {
 
     } catch (error) {
       console.error('Gagal memuat data AdminDashboard:', error.message);
+      // Hindari munculin toast error kalau ini background proses
+      if (!isBackground) toast.error('Gagal memuat data dashboard!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -208,4 +237,4 @@ export default function AdminDashboard({ role = 'admin' }) {
       </div>
     </div>
   );
-} 
+}

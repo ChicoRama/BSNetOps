@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Plus, Edit3, Trash2, Search, ArrowLeft, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
 import TambahKategori from './TambahKategori';
 import EditKategori from './EditKategori';
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
+import { useSupabaseRealtime } from '../../../hooks/useSupabaseRealtime'; // 🔥 Hook Realtime
 
 export default function KategoriBarang() {
-  const [categories, setCategories] = useState([]);
+  // 🔥 Data kategori sekarang otomatis realtime, tanpa perlu fetchCategories manual
+  const { data: categories, refetch } = useSupabaseRealtime('categories', '*', {
+    orderBy: 'created_at',
+    ascending: false,
+  });
+
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -21,24 +27,6 @@ export default function KategoriBarang() {
     type: 'danger',
     onConfirm: () => {}
   });
-
-  const fetchCategories = async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      console.error("Error fetching data:", error);
-      toast.error("Gagal mengambil data kategori!");
-    } else {
-      setCategories(data || []);
-    }
-  };
-
-  useEffect(() => {
-    fetchCategories();
-  }, []);
 
   const handleEditClick = (category) => {
     setSelectedCategory(category);
@@ -70,7 +58,7 @@ export default function KategoriBarang() {
       if (error) throw error;
       
       toast.success(`Kategori "${newCategory.name}" berhasil ditambahkan!`, { id: toastId });
-      fetchCategories(); 
+      refetch(); // 🔥 Realtime otomatis update, ini cuma buat sinkron instan
       setIsAddOpen(false); 
 
     } catch (error) {
@@ -90,7 +78,7 @@ export default function KategoriBarang() {
       toast.error("Gagal update: " + error.message, { id: toastId });
     } else {
       toast.success("Kategori berhasil diperbarui!", { id: toastId });
-      fetchCategories();
+      refetch();
       setIsEditOpen(false);
     }
   };
@@ -116,7 +104,7 @@ export default function KategoriBarang() {
             
           if (error) throw error;
           toast.success(`Kategori "${name}" dipindahkan ke Trash.`, { id: toastId });
-          fetchCategories();
+          refetch();
           setConfirmModal({ isOpen: false });
         } catch (error) {
           console.error("Gagal memindahkan ke trash:", error.message);
@@ -141,7 +129,7 @@ export default function KategoriBarang() {
         
       if (error) throw error;
       toast.success(`Kategori "${name}" berhasil dipulihkan!`, { id: toastId });
-      fetchCategories();
+      refetch();
     } catch (error) {
       console.error("Gagal merestore kategori:", error.message);
       toast.error("Gagal merestore kategori.", { id: toastId });
@@ -172,7 +160,7 @@ export default function KategoriBarang() {
           if (deleteCatError) throw deleteCatError;
 
           toast.success(`Kategori "${name}" berhasil dihapus permanen.`, { id: toastId });
-          fetchCategories(); 
+          refetch(); 
           setConfirmModal({ isOpen: false });
         } catch (error) {
           console.error("Gagal menghapus permanen kategori:", error.message);

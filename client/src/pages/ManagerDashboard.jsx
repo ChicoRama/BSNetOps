@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, LabelList } from 'recharts';
 import { ClipboardList, AlertTriangle, CheckSquare, ShieldAlert, Building2, Package } from 'lucide-react';
 import { supabase } from '../../supabaseClient'; 
+import toast from 'react-hot-toast'; // 🔥 Import Toast
 
 const CustomLegend = (props) => {
   const { payload } = props;
@@ -88,12 +89,38 @@ export default function ManagerDashboard({ role = 'manager', setCurrentView}) {
     restock: 0
   });
 
+  // ==========================================
+  // 🔥 SUPABASE REALTIME DI-AKTIFKAN
+  // ==========================================
   useEffect(() => {
+    // 1. Tarik data pertama kali halaman dibuka
     fetchDashboardData();
+
+    // 2. Subscribe ke Supabase Realtime (Memantau semua perubahan di database)
+    const dashboardChannel = supabase
+      .channel('realtime-manager-dashboard')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public' }, // Memantau semua tabel (requests & items)
+        (payload) => {
+          console.log('Realtime Update Diterima di Manager Dashboard:', payload);
+          // Tarik ulang data secara diam-diam (isBackground = true)
+          fetchDashboardData(true);
+        }
+      )
+      .subscribe();
+
+    // 3. Bersihkan channel saat komponen ditutup
+    return () => {
+      supabase.removeChannel(dashboardChannel);
+    };
   }, []);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan
+  const fetchDashboardData = async (isBackground = false) => {
+    // Hanya tampilkan loading screen jika bukan background refresh
+    if (!isBackground) setLoading(true);
+
     try {
       // 1. Ambil data Requests
       const { data: requestsData, error: reqError } = await supabase
@@ -183,8 +210,10 @@ export default function ManagerDashboard({ role = 'manager', setCurrentView}) {
 
     } catch (error) {
       console.error('Gagal mengambil data dashboard:', error.message);
+      // Hindari munculin toast error kalau ini background proses
+      if (!isBackground) toast.error('Gagal memuat data dashboard dari database!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -200,7 +229,7 @@ export default function ManagerDashboard({ role = 'manager', setCurrentView}) {
         
         <div
         onClick={() => setCurrentView('approval-request')}
-        className="bg-white p-6 border border-zinc-200/80 rounded-2xl shadow-sm border-l-4 border-l-amber-500 transition-all hover:scale-[1.01]">
+        className="bg-white p-6 border border-zinc-200/80 rounded-2xl shadow-sm border-l-4 border-l-amber-500 transition-all hover:scale-[1.01] cursor-pointer">
           <div className="flex justify-between items-start">
             <div>
               <h3 className="text-zinc-500 text-xs font-semibold uppercase tracking-wider">Antrean Approval</h3>

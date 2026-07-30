@@ -11,10 +11,25 @@ export default function LogAktifitas() {
 
   useEffect(() => {
     fetchLogs();
+
+    // 🔥 Realtime: dengarkan perubahan di tabel activity_logs
+    const channel = supabase
+      .channel('realtime-activity-logs')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'activity_logs' },
+        () => fetchLogs(true) // background refresh, tanpa spinner loading
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  const fetchLogs = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
+  const fetchLogs = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       // 1. Ambil data dari tabel activity_logs
       const { data: logData, error: logError } = await supabase
@@ -57,7 +72,7 @@ export default function LogAktifitas() {
     } catch (error) {
       console.error('Gagal memuat log:', error.message);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 

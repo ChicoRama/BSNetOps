@@ -48,10 +48,26 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
     document.addEventListener('mousedown', handleClickOutside);
     window.addEventListener('profileUpdated', fetchUserDataAndNotifs);
 
+    // 🔥 Realtime: notifikasi baru & perubahan stok (untuk alert stok menipis) langsung muncul
+    const channel = supabase
+      .channel('realtime-header-notifications')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
+        () => fetchUserDataAndNotifs()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'items' },
+        () => fetchUserDataAndNotifs() // agar alert "Stok Menipis" ikut realtime
+      )
+      .subscribe();
+
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('profileUpdated', fetchUserDataAndNotifs);
       if (hoverTimer.current) clearTimeout(hoverTimer.current); // Bersihkan timer saat komponen ditutup
+      supabase.removeChannel(channel);
     };
   }, []);
 
