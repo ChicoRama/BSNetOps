@@ -17,32 +17,44 @@ export default function PenyetujuanBarang() {
   const [showBonPreview, setShowBonPreview] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🔥 FETCH DATA DARI SUPABASE DAN SINKRONKAN STOK GUDANG REAL-TIME
+  // 🔥 Siapkan timer yang kebal terhadap render ulang React
+  const debounceTimer = useRef(null);
+
+  // 🔥 FETCH DATA DARI SUPABASE DAN SINKRONKAN STOK GUDANG REAL-TIME DENGAN DEBOUNCE
   useEffect(() => {
     fetchRequestsFromSupabase();
 
-    // 🔥 Realtime: dengarkan perubahan di requests, request_items, dan items (stok)
+    // Fungsi untuk menangani perubahan dengan penunda 0.8 detik (menunggu request_items selesai di-insert)
+    const handleRealtimeUpdate = (payload) => {
+      console.log('Realtime mendeteksi perubahan di tabel:', payload.table);
+      
+      // Bersihkan timer lama kalau ada rentetan data masuk beruntun
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+      
+      // Setel ulang timer
+      debounceTimer.current = setTimeout(() => {
+        fetchRequestsFromSupabase(true);
+      }, 800); // Naikkan sedikit jadi 0.8 detik biar aman temanmu selesai nyimpan data
+    };
+
+    // Panggil tabelnya SECARA SPESIFIK satu per satu (Supabase lebih suka cara ini)
     const channel = supabase
       .channel('realtime-penyetujuan-barang')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'requests' },
-        () => fetchRequestsFromSupabase(true)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'request_items' },
-        () => fetchRequestsFromSupabase(true)
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'items' },
-        () => fetchRequestsFromSupabase(true) // agar Stok Gudang ikut update realtime
-      )
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, handleRealtimeUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'request_items' }, handleRealtimeUpdate)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, handleRealtimeUpdate)
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Berhasil terhubung ke Supabase Realtime (Penyetujuan Barang)');
+        }
+      });
 
+    // Bersihkan memori kalau komponen ditutup
     return () => {
       supabase.removeChannel(channel);
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
   }, []);
 
@@ -180,12 +192,12 @@ export default function PenyetujuanBarang() {
     const isExceedingRequest = selectedRequest.items.some(item => item.jmlDisetujui > item.jmlDiminta);
     
     if (isExceedingStock) {
-      toast.error("Gagal: Ada barang yang jumlah disetujuinya melebihi stok gudang saat ini!"); // 🔥 Ubah alert jadi toast
+      toast.error("Gagal: Ada barang yang jumlah disetujuinya melebihi stok gudang saat ini!"); 
       return;
     }
     
     if (isExceedingRequest) {
-      toast.error("Gagal: Jumlah disetujui tidak boleh melebihi jumlah yang diminta pemohon!"); // 🔥 Ubah alert jadi toast
+      toast.error("Gagal: Jumlah disetujui tidak boleh melebihi jumlah yang diminta pemohon!"); 
       return;
     }
 
