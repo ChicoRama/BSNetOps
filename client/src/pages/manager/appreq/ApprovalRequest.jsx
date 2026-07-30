@@ -27,12 +27,35 @@ export default function ApprovalRequest() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  // ==========================================
+  // 🔥 SUPABASE REALTIME DI-AKTIFKAN!
+  // ==========================================
   useEffect(() => {
+    // 1. Tarik data pertama kali halaman dibuka
     fetchRequestsFromSupabase();
+
+    // 2. Subscribe ke Supabase Realtime untuk tabel 'requests'
+    const requestChannel = supabase
+      .channel('realtime-approval-requests')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'requests' },
+        (payload) => {
+          fetchRequestsFromSupabase(true);
+        }
+      )
+      .subscribe();
+
+    // 3. Bersihkan channel saat komponen ditutup
+    return () => {
+      supabase.removeChannel(requestChannel);
+    };
   }, []);
 
-  const fetchRequestsFromSupabase = async () => {
-    setLoading(true);
+  // 🔥 Parameter isBackground ditambahkan
+  const fetchRequestsFromSupabase = async (isBackground = false) => {
+    if (!isBackground) setLoading(true); // Hanya tampilkan tulisan loading kalau bukan background refresh
+    
     try {
       const { data, error } = await supabase
         .from('requests')
@@ -94,10 +117,10 @@ export default function ApprovalRequest() {
         setRequests(formattedData);
       }
     } catch (error) {
-      console.error('Gagal memuat data permintaan:', error.message);
       toast.error('Gagal memuat data permintaan dari database!');
+      if (!isBackground) toast.error('Gagal memuat data permintaan dari database!');
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -210,7 +233,8 @@ export default function ApprovalRequest() {
       setSelectedRows([]);
       setIsConfirmOpen(false);
       setIsModalOpen(false);
-      fetchRequestsFromSupabase();
+      // Realtime otomatis nge-fetch, tapi kita jalankan fetch manual 1x biar seketika sinkron.
+      fetchRequestsFromSupabase(true);
 
     } catch (error) {
       console.error('Gagal memproses:', error.message);
@@ -372,7 +396,7 @@ export default function ApprovalRequest() {
                   <th className="py-3 px-2">ID Permintaan</th>
                   <th className="py-3 px-4">Pemohon</th>
                   <th className="py-3 px-4">Daftar Barang</th>
-                  <th className="py-3 px-4 text-center">Prioritas Utama (Urgent)</th>
+                  <th className="py-3 px-4 text-center">Prioritas Utama</th>
                   <th className="py-3 px-4">Tanggal Pengajuan</th>
                   <th className="py-3 px-4 text-center">Status</th>
                 </tr>
@@ -403,9 +427,10 @@ export default function ApprovalRequest() {
                         )}
                       </td>
                       <td className="py-4 px-2 font-mono font-bold text-zinc-900">{item.id}</td>
-                      <td className="py-4 px-4">
+                      <td className="py-4 px-4 max-w-[150px]">
                         <div className="flex flex-col">
-                          <span className="font-bold text-zinc-800">{item.namaPemohon}</span>
+                          {/* 🔥 Ditambahkan break-words jika teks kepanjangan */}
+                          <span className="font-bold text-zinc-800 break-words">{item.namaPemohon}</span>
                           <span className="text-[10px] text-zinc-400 font-medium">{item.unit}</span>
                         </div>
                       </td>
@@ -476,7 +501,8 @@ export default function ApprovalRequest() {
               <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-4">
                 <div>
                   <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Nama Pemohon</span>
-                  <span className="text-zinc-900 font-bold text-sm">{activeDetail.namaPemohon}</span>
+                  {/* 🔥 Ditambahkan break-words jika teks kepanjangan */}
+                  <span className="text-zinc-900 font-bold text-sm break-words">{activeDetail.namaPemohon}</span>
                 </div>
                 <div>
                   <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Unit / Cabang</span>
@@ -512,7 +538,8 @@ export default function ApprovalRequest() {
                       {activeDetail.items.map((item, index) => (
                         <tr key={index} className="hover:bg-zinc-50">
                           <td className="p-3 text-center text-zinc-400 font-mono">{index + 1}</td>
-                          <td className="p-3 font-bold text-zinc-700">{item.namaBarang}</td>
+                          {/* 🔥 Ditambahkan break-words agar kalau nama panjang tabel tidak stretch */}
+                          <td className="p-3 font-bold text-zinc-700 break-words max-w-[150px]">{item.namaBarang}</td>
                           <td className="p-3 text-center">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               item.prioritas === 'Tinggi' ? 'bg-red-50 text-red-600' :
@@ -523,7 +550,7 @@ export default function ApprovalRequest() {
                           </td>
                           <td className="p-3 text-center font-bold text-zinc-500">{item.jumlahDiminta}</td>
                           <td className="p-3 text-center font-bold text-[#00664b]">{item.jumlahDisetujui ?? item.jumlahDiminta} Unit</td>
-                          <td className="p-3 text-zinc-500 italic">{item.remark || '-'}</td>
+                          <td className="p-3 text-zinc-500 italic break-words max-w-[150px]">{item.remark || '-'}</td>
                         </tr>
                       ))}
                     </tbody>

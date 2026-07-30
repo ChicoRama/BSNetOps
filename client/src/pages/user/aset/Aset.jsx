@@ -313,13 +313,13 @@ export default function Aset({ setCurrentView }) {
 
             <div className="flex-1 flex flex-col justify-between py-1">
               <div>
-                <h3 className="font-extrabold text-xl capitalize text-zinc-900 border-b border-zinc-900 pb-1.5 tracking-tight">
+                <h3 className="font-extrabold text-xl capitalize text-zinc-900 border-b border-zinc-900 pb-1.5 tracking-tight break-all pr-8">
                   {selectedAsset.nama}
                 </h3>
 
                 <div className="mt-6 space-y-3">
                   <p className="text-xs text-zinc-500 font-medium">
-                    Masukkan aset inventaris ini ke list item permintaan untuk pengajuan bon barang sekaligus.
+                    Masukkan barang ini ke list item permintaan untuk pengajuan bon barang sekaligus.
                   </p>
 
                   <div className="space-y-2 pt-6">

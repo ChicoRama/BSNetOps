@@ -4,6 +4,7 @@ import {
   FaChartColumn,
   FaShieldHalved,
 } from "react-icons/fa6";
+import { Link } from "react-router-dom";
 import FeatureCard from "./featurecard";
 
 const features = [
@@ -46,13 +47,13 @@ export default function Hero() {
         <div className="group relative mt-7 inline-block">
           <span className="absolute -inset-1.5 rounded-2xl bg-[#00634b]/0 blur-sm transition-all duration-300 group-hover:bg-[#00634b]/20" />
 
-          <a
-            href="/login"
+          <Link
+            to="/login"
             className="relative z-10 inline-flex items-center gap-3 rounded-xl bg-[#00634b] px-7 py-4 text-[15px] font-semibold text-white shadow-lg shadow-emerald-950/20 transition-all duration-300 group-hover:-translate-y-1 group-hover:bg-[#004d3a] group-hover:shadow-xl active:translate-y-0 active:scale-95"
           >
             <FaArrowRight className="text-lg" />
             Get Started
-          </a>
+          </Link>
         </div>
 
         <div className="mt-8 grid max-w-[330px] grid-cols-3 gap-4">

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
-import { useNavigate } from "react-router-dom"; 
+import { useNavigate, Link } from "react-router-dom"; 
 import { supabase } from "../../supabaseClient"; 
 
 export default function LoginPage() {
@@ -143,7 +143,7 @@ export default function LoginPage() {
       {/* BACKGROUND */}
       <div
         className="absolute inset-0 scale-105 bg-cover bg-center blur-sm"
-        style={{ backgroundImage: "url('/images/landingpage-bg.jpeg')" }}
+        style={{ backgroundImage: "url('./images/landingpage-bg.jpeg')" }}
       />
       <div className="absolute inset-0 bg-black/35" />
 
@@ -153,12 +153,13 @@ export default function LoginPage() {
           <div className="relative w-full max-w-[400px] rounded-2xl bg-white px-8 py-8 shadow-2xl">
 
             {/* CLOSE */}
-            <a
-              href="/"
+            <button
+              type="button"
+              onClick={() => navigate("/")}
               className="absolute right-5 top-5 cursor-pointer text-xl text-slate-900 transition hover:scale-110 hover:text-[#00634b]"
             >
               <FaXmark />
-            </a>
+            </button>
 
             {/* TITLE */}
             <div className="mb-6 text-center">
@@ -260,12 +261,12 @@ export default function LoginPage() {
 
             <p className="mt-5 text-center text-sm">
             Belum punya akun?{" "}
-            <a
-                href="/register"
+            <Link
+                to="/register"
                 className="font-semibold text-[#00634b] hover:underline cursor-pointer"
             >
                 Daftar Sekarang
-            </a>
+            </Link>
             </p>
 
           </div>

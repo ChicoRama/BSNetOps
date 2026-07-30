@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit3, Trash2, Search, Filter, Shield, UserCheck, RotateCcw, XCircle, ArrowLeft } from 'lucide-react';
+import { Plus, Edit3, Trash2, Search, Filter, Shield, UserCheck, RotateCcw, XCircle, ArrowLeft, AlertTriangle } from 'lucide-react';
 import TambahUser from './TambahUser';
 import EditUser from './EditUser';
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -15,6 +15,15 @@ export default function UserManagement() {
   const [showTrash, setShowTrash] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('Semua');
+
+  // 🔥 State untuk Modal Konfirmasi Custom
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'danger',
+    onConfirm: () => {}
+  });
 
   useEffect(() => {
     fetchUsersFromSupabase();
@@ -47,7 +56,7 @@ export default function UserManagement() {
       }
     } catch (error) {
       console.error('Gagal memuat data user:', error.message);
-      toast.error('Gagal memuat data user dari database!'); // 🔥 Toast Error
+      toast.error('Gagal memuat data user dari database!');
     } finally {
       setLoading(false);
     }
@@ -59,7 +68,7 @@ export default function UserManagement() {
   };
 
   const handleUpdateUser = async (updatedUser) => {
-    const toastId = toast.loading('Memperbarui data akun...'); // 🔥 Toast Loading
+    const toastId = toast.loading('Memperbarui data akun...');
     try {
       const { error } = await supabase
         .from('user_roles')
@@ -75,76 +84,106 @@ export default function UserManagement() {
       if (error) throw error;
 
       setIsEditOpen(false);
-      toast.success(`Data akun ${updatedUser.name} berhasil diperbarui!`, { id: toastId }); // 🔥 Toast Sukses
+      toast.success(`Data akun ${updatedUser.name} berhasil diperbarui!`, { id: toastId });
       fetchUsersFromSupabase(); 
     } catch (error) {
       console.error('Gagal memperbarui user:', error.message);
-      toast.error(`Gagal memperbarui database: ${error.message}`, { id: toastId }); // 🔥 Toast Error
+      toast.error(`Gagal memperbarui database: ${error.message}`, { id: toastId });
     }
   };
 
-  const handleSoftDelete = async (originalId, name) => {
-    if (window.confirm(`Apakah Anda yakin ingin memindahkan akun ${name} ke tempat sampah?`)) {
-      try {
-        const timestamp = new Date().toISOString();
-        const { error } = await supabase
-          .from('user_roles')
-          .update({ deleted_at: timestamp })
-          .eq('id', originalId);
+  // 🔥 Menggunakan Modal Custom
+  const handleSoftDelete = (originalId, name) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Pindahkan ke Trash?',
+      message: `Apakah Anda yakin ingin memindahkan akun ${name} ke tempat sampah?`,
+      type: 'warning',
+      onConfirm: async () => {
+        const toastId = toast.loading('Memindahkan ke trash...');
+        try {
+          const timestamp = new Date().toISOString();
+          const { error } = await supabase
+            .from('user_roles')
+            .update({ deleted_at: timestamp })
+            .eq('id', originalId);
 
-        if (error) throw error;
+          if (error) throw error;
 
-        setUsers(users.map(user => 
-          user.originalId === originalId ? { ...user, isDeleted: true, deleted_at: timestamp } : user
-        ));
-        
-        toast.success(`Akun ${name} dipindahkan ke tempat sampah.`); // 🔥 Toast Sukses
-      } catch (error) {
-        console.error('Gagal mengarsipkan akun:', error.message);
-        toast.error(`Gagal mengarsipkan akun: ${error.message}`); // 🔥 Toast Error
+          setUsers(users.map(user => 
+            user.originalId === originalId ? { ...user, isDeleted: true, deleted_at: timestamp } : user
+          ));
+          
+          toast.success(`Akun ${name} dipindahkan ke tempat sampah.`, { id: toastId });
+          setConfirmModal({ isOpen: false });
+        } catch (error) {
+          console.error('Gagal mengarsipkan akun:', error.message);
+          toast.error(`Gagal mengarsipkan akun: ${error.message}`, { id: toastId });
+          setConfirmModal({ isOpen: false });
+        }
       }
-    }
+    });
   };
 
-  const handleRestore = async (originalId, name) => {
-    if (window.confirm(`Kembalikan hak akses akun untuk ${name}?`)) {
-      try {
-        const { error } = await supabase
-          .from('user_roles')
-          .update({ deleted_at: null })
-          .eq('id', originalId);
+  // 🔥 Menggunakan Modal Custom
+  const handleRestore = (originalId, name) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Restore Akun?',
+      message: `Kembalikan hak akses akun untuk ${name}?`,
+      type: 'warning',
+      onConfirm: async () => {
+        const toastId = toast.loading('Memulihkan akun...');
+        try {
+          const { error } = await supabase
+            .from('user_roles')
+            .update({ deleted_at: null })
+            .eq('id', originalId);
 
-        if (error) throw error;
+          if (error) throw error;
 
-        setUsers(users.map(user => 
-          user.originalId === originalId ? { ...user, isDeleted: false, deleted_at: null } : user
-        ));
-        
-        toast.success(`Hak akses akun ${name} berhasil dipulihkan.`); // 🔥 Toast Sukses
-      } catch (error) {
-        console.error('Gagal memulihkan akun:', error.message);
-        toast.error(`Gagal memulihkan akun: ${error.message}`); // 🔥 Toast Error
+          setUsers(users.map(user => 
+            user.originalId === originalId ? { ...user, isDeleted: false, deleted_at: null } : user
+          ));
+          
+          toast.success(`Hak akses akun ${name} berhasil dipulihkan.`, { id: toastId });
+          setConfirmModal({ isOpen: false });
+        } catch (error) {
+          console.error('Gagal memulihkan akun:', error.message);
+          toast.error(`Gagal memulihkan akun: ${error.message}`, { id: toastId });
+          setConfirmModal({ isOpen: false });
+        }
       }
-    }
+    });
   };
 
-  const handleHardDelete = async (originalId, name) => {
-    if (window.confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN akun ${name}? Data tidak dapat dikembalikan.`)) {
-      try {
-        const { error } = await supabase
-          .from('user_roles')
-          .delete()
-          .eq('id', originalId);
+  // 🔥 Menggunakan Modal Custom
+  const handleHardDelete = (originalId, name) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Permanen Akun?',
+      message: `PERINGATAN: Apakah Anda yakin ingin menghapus PERMANEN akun ${name}? Data pengguna ini tidak dapat dikembalikan.`,
+      type: 'danger',
+      onConfirm: async () => {
+        const toastId = toast.loading('Menghapus permanen...');
+        try {
+          const { error } = await supabase
+            .from('user_roles')
+            .delete()
+            .eq('id', originalId);
 
-        if (error) throw error;
+          if (error) throw error;
 
-        setUsers(users.filter(user => user.originalId !== originalId));
-        toast.success(`Akun ${name} berhasil dihapus permanen.`); // 🔥 Toast Sukses
-      } catch (error) {
-        console.error('Gagal menghapus permanen akun:', error.message);
-        toast.error(`Gagal menghapus permanen akun: ${error.message}`); // 🔥 Toast Error
+          setUsers(users.filter(user => user.originalId !== originalId));
+          toast.success(`Akun ${name} berhasil dihapus permanen.`, { id: toastId });
+          setConfirmModal({ isOpen: false });
+        } catch (error) {
+          console.error('Gagal menghapus permanen akun:', error.message);
+          toast.error(`Gagal menghapus permanen akun: ${error.message}`, { id: toastId });
+          setConfirmModal({ isOpen: false });
+        }
       }
-    }
+    });
   };
 
   const processedUsers = users
@@ -163,6 +202,7 @@ export default function UserManagement() {
         <div className="flex items-center gap-3">
           {showTrash && (
             <button 
+              type="button"
               onClick={() => setShowTrash(false)} 
               className="p-2 bg-white border border-zinc-200 rounded-xl shadow-md text-[#00664b] hover:bg-emerald-50 transition-all cursor-pointer"
             >
@@ -180,6 +220,7 @@ export default function UserManagement() {
         <div className="flex items-center gap-3 self-start md:self-auto">
           {!showTrash && (
             <button 
+              type="button"
               onClick={() => setShowTrash(true)} 
               className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-sm font-semibold hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer shadow-md group"
             >
@@ -189,6 +230,7 @@ export default function UserManagement() {
           
           {!showTrash && (
             <button 
+              type="button"
               onClick={() => setIsAddOpen(true)}
               className="flex items-center gap-2 bg-[#00664b] hover:bg-[#00553e] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
             >
@@ -284,12 +326,14 @@ export default function UserManagement() {
                       {showTrash ? (
                         <div className="flex justify-end gap-2">
                           <button 
+                            type="button"
                             onClick={() => handleRestore(user.originalId, user.name)}
                             className="p-1.5 text-amber-600 hover:bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer transition-colors"
                           >
                             <RotateCcw size={14} /> Restore
                           </button>
                           <button 
+                            type="button"
                             onClick={() => handleHardDelete(user.originalId, user.name)}
                             className="p-1.5 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer transition-colors"
                           >
@@ -299,6 +343,7 @@ export default function UserManagement() {
                       ) : (
                         <>
                           <button 
+                            type="button"
                             onClick={() => handleEditClick(user)}
                             title="Edit Data"
                             className="p-1.5 text-zinc-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all inline-flex items-center cursor-pointer"
@@ -306,6 +351,7 @@ export default function UserManagement() {
                             <Edit3 size={16} />
                           </button>
                           <button 
+                            type="button"
                             onClick={() => handleSoftDelete(user.originalId, user.name)}
                             title="Pindah ke Tempat Sampah"
                             className="p-1.5 text-zinc-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all inline-flex items-center cursor-pointer"
@@ -322,6 +368,39 @@ export default function UserManagement() {
           </table>
         </div>
       </div>
+
+      {/* 🔥 MODAL KONFIRMASI CUSTOM (GAYA BSN MODERN) */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 text-center space-y-3">
+              <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-lg font-bold text-zinc-900">{confirmModal.title}</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed px-2">{confirmModal.message}</p>
+            </div>
+            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-100 flex gap-3 justify-end">
+              <button 
+                type="button"
+                onClick={() => setConfirmModal({ isOpen: false })} 
+                className="px-4 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-200/60 rounded-xl transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button 
+                type="button"
+                onClick={confirmModal.onConfirm} 
+                className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer ${
+                  confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#00664b] hover:bg-[#00553e]'
+                }`}
+              >
+                Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isAddOpen && (
         <TambahUser 

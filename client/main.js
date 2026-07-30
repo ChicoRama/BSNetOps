@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -10,9 +10,13 @@ function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      nodeIntegration: true,
+      nodeIntegration: false,
+      contextIsolation: true,
     },
   });
+
+  // Menghilangkan menu bar bawaan (File, Edit, View, Window)
+  Menu.setApplicationMenu(null);
 
   // Memuat file hasil build dari Vite
   win.loadFile(path.join(__dirname, 'dist', 'index.html'));

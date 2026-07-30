@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+
+import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
 
 import LandingPage from "./pages/LandingPage";
