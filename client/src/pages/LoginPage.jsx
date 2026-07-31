@@ -126,7 +126,11 @@ export default function LoginPage() {
       return;
     }
 
-    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail);
+    // 🔥 redirectTo memastikan link di email mengarah ke halaman /reset-password
+    // milik aplikasi kita (bukan default Supabase / localhost bawaan development)
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
 
     if (error) {
       alert(`Gagal: ${error.message}`);
