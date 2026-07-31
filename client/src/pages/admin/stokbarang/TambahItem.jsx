@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Save, Upload, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient';
 import toast from 'react-hot-toast'; // 🔥 Import Toast
@@ -17,6 +17,20 @@ export default function TambahItem({ onClose, onSuccess }) {
 
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [kategoriList, setKategoriList] = useState([]);
+
+    useEffect(() => {
+      const fetchKategori = async () => {
+        const { data, error } = await supabase
+        .from('categories')
+        .selected('name')
+        .is('deleted_at', null);
+
+      if (!error && data) {
+        setKategoriList(data);
+      }
+    }
+  },[]);
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -168,10 +182,24 @@ export default function TambahItem({ onClose, onSuccess }) {
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white" 
+              maxLength={50}
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="block sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-zinc-700 mb-1">Lokasi Rak/Penyimpanan</label>
+              <input 
+                type="text" 
+                placeholder="Contoh: Rak A-01"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white text-zinc-700" 
+              />
+            </div>
+          </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-zinc-700 mb-1">Kategori</label>
               <select 
@@ -179,8 +207,12 @@ export default function TambahItem({ onClose, onSuccess }) {
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] cursor-pointer"
               >
-                <option value="Elektronik">Elektronik</option>
-                <option value="ATK">ATK</option>
+                <option value="" disabled>Pilih Kategori...</option>
+                {kategoriList.map((kat, index) => (
+                <option key={index} value={kategoriList.name}>
+                  {kat.name} 
+                </option>
+                ))}
               </select>
             </div>
             <div>
@@ -200,32 +232,9 @@ export default function TambahItem({ onClose, onSuccess }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1">Lokasi Rak/Penyimpanan</label>
-              <input 
-                type="text" 
-                placeholder="Contoh: Rak A-01"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white text-zinc-700" 
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1">Tanggal Masuk</label>
-              <input 
-                type="date" 
-                required 
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white text-zinc-700" 
-              />
-            </div>
-          </div>
-
           <div>
-            <label className="block text-sm font-semibold text-zinc-700 mb-1">Foto Barang <span className="text-xs text-zinc-400 font-normal">(Opsional)</span></label>
-            <div className="relative mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-zinc-300 border-dashed rounded-xl hover:border-[#00664b] transition-colors bg-zinc-50 hover:bg-zinc-100/50 group cursor-pointer overflow-hidden">
+            <label className="block text-sm font-semibold text-zinc-700 mb-1">Foto Barang <span className="text-xs text-zinc-400 font-normal"></span></label>
+            <div className="relative mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-zinc-300 border-dashed rounded-xl hover:border-[#00664b] transition-colors bg-zinc-50 hover:bg-zinc-100/50 group cursor-pointer overflow-hidden" required>
               
               <input
                 type="file"

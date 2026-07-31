@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Save } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
 export default function TambahUser({ onClose, onSuccess }) {
   const [formData, setFormData] = useState({ 
@@ -10,7 +10,7 @@ export default function TambahUser({ onClose, onSuccess }) {
     password: '',
     staff_id: `BSN-${Math.floor(100 + Math.random() * 900)}`, 
     unit: '', 
-    role: 'User', 
+    role: 'Staff', 
     status: 'Aktif' 
   });
   
@@ -20,24 +20,28 @@ export default function TambahUser({ onClose, onSuccess }) {
     e.preventDefault();
     setLoading(true);
 
-    // 🔥 Mulai animasi loading dari Toast
     const toastId = toast.loading('Mendaftarkan user baru...');
 
     try {
+      // 1. Daftarkan ke sistem Autentikasi
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
       });
 
+      // Kalau email sudah terdaftar di sistem Auth, dia akan terlempar ke sini
       if (authError) throw authError;
 
       const isSuspended = formData.status === 'Suspend';
       const finalStaffId = formData.staff_id || `BSN-${Math.floor(100 + Math.random() * 900)}`;
 
+      // 🔥 2. UBAH JADI UPSERT (Update or Insert)
+      // Kalau sistem DB udah otomatis bikin datanya, kita timpa. Kalau belum, kita insert.
       const { error: dbError } = await supabase
         .from('user_roles')
-        .insert([
+        .upsert([
           {
+            id: authData.user?.id, // 📍 Sambungkan langsung dengan ID Auth Supabase
             staff_id: finalStaffId,
             username: formData.name,
             email: formData.email,
@@ -45,11 +49,10 @@ export default function TambahUser({ onClose, onSuccess }) {
             unit: formData.unit,
             is_suspended: isSuspended
           }
-        ]);
+        ], { onConflict: 'email' }); // 📍 KUNCI SOLUSI: Patokan penimpanya adalah kolom email
 
       if (dbError) throw dbError;
 
-      // 🔥 Sukses Toast
       toast.success(`User baru dengan ID ${finalStaffId} berhasil didaftarkan.`, { id: toastId });
       
       if (onSuccess) onSuccess(); 
@@ -57,8 +60,16 @@ export default function TambahUser({ onClose, onSuccess }) {
 
     } catch (error) {
       console.error('Gagal mendaftarkan user baru:', error.message);
-      // 🔥 Error Toast
-      toast.error(`Gagal mendaftarkan user: ${error.message}`, { id: toastId });
+      
+      // 🔥 Bikin pesan error-nya lebih gampang dibaca manusia
+      let errorMessage = error.message;
+      if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
+        errorMessage = 'Data nyangkut! Email ini sudah tercatat di database.';
+      } else if (errorMessage.toLowerCase().includes('already registered')) {
+        errorMessage = 'Email sudah digunakan! Silakan gunakan email lain.';
+      }
+
+      toast.error(`Gagal: ${errorMessage}`, { id: toastId, duration: 5000 });
     } finally {
       setLoading(false);
     }
@@ -118,6 +129,20 @@ export default function TambahUser({ onClose, onSuccess }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">Hak Akses</label>
+              <select 
+                required
+                value={formData.role} 
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer transition-all"
+              >
+                <option value="Staff">Staff</option>
+                <option value="Manager">Manager</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+
+            <div>
               <label className="block text-xs font-bold text-zinc-700 mb-1">Unit / Cabang</label>
               <select 
                 required
@@ -135,17 +160,18 @@ export default function TambahUser({ onClose, onSuccess }) {
                 <option value="KCP Magelang">KCP Magelang</option>
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-zinc-700 mb-1">Status Awal</label>
-              <select 
-                value={formData.status} 
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
-              >
-                <option value="Aktif">Aktif</option>
-                <option value="Suspend">Suspend</option>
-              </select>
-            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-zinc-700 mb-1">Status Awal</label>
+            <select 
+              value={formData.status} 
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+              className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
+            >
+              <option value="Aktif">Aktif</option>
+              <option value="Suspend">Suspend</option>
+            </select>
           </div>
 
           <div className="pt-4 flex justify-end gap-3 border-t border-zinc-100 mt-4">

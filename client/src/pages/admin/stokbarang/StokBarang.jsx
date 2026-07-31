@@ -74,13 +74,9 @@ export default function StokBarang({ role = 'admin' }) {
     try {
       const { count, error: checkError } = await supabase
         .from('request_items')
-        .select('*', { count: 'exact', head: true })
-        .or(`kode_barang.eq.${item.id},nama_barang.ilike.${item.name}`);
-
-      if (checkError) throw checkError;
 
       if (count && count > 0) {
-        toast.error(`TIDAK BISA DIHAPUS!\nBarang "${item.name}" sudah pernah diajukan/di-request.`, { duration: 5000 });
+        toast.error(`TIDAK BISA DIHAPUS!\nBarang "${item.name}" sudah pernah di-request.`, { duration: 3000 });
         return;
       }
 

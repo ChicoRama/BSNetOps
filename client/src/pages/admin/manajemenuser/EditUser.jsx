@@ -20,6 +20,7 @@ export default function EditUser({ userData, onClose, onSave }) {
         originalId: userData.originalId || '',
         name: userData.name || '',
         email: userData.email || '',
+        // Pastikan role disetorkan dengan benar, jika tidak ada, default ke Staff
         role: userData.role || 'Staff',
         unit: userData.unit || 'KC Semarang',
         isSuspended: userData.isSuspended || false, 
@@ -78,21 +79,26 @@ export default function EditUser({ userData, onClose, onSave }) {
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })} 
                 className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
               >
-                <option value="Staff">Staff</option>
+                {/* 📍 Pilihan role sudah disamakan */}
                 <option value="Admin">Admin</option>
-                <option value="Manager">Manager</option>
+                <option value="Staff">Staff</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit</label>
+              <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit / Cabang</label>
               <select 
                 value={formData.unit} 
                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })} 
                 className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
               >
+                {/* 📍 Pilihan unit sudah dilengkapkan sama persis dengan TambahUser */}
                 <option value="KC Semarang">KC Semarang</option>
                 <option value="KCP Majapahit">KCP Majapahit</option>
+                <option value="KCP Ngaliyan">KCP Ngaliyan</option>
                 <option value="KCP Ungaran">KCP Ungaran</option>
+                <option value="KCP Kendal">KCP Kendal</option>
+                <option value="KCP Kudus">KCP Kudus</option>
+                <option value="KCP Magelang">KCP Magelang</option>
               </select>
             </div>
           </div>

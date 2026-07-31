@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
+import { supabase } from '../supabaseClient.js';
 
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
@@ -120,7 +121,7 @@ export default function App() {
       <Toaster 
         position="top-center" 
         toastOptions={{
-          duration: 3000,
+          duration: 1000,
           style: {
             background: '#333',
             color: '#fff',

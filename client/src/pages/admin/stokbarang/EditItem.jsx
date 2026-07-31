@@ -1,26 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast'; 
 
 export default function EditItem({ itemData, onClose, onSuccess }) {
   const [formData, setFormData] = useState({ 
     id: '', 
     name: '', 
-    category: 'Elektronik', 
+    category: '', 
     stock: '', 
     location: '', 
     date: '' 
   });
   
   const [loading, setLoading] = useState(false);
+  
+  // 📍 1. STATE UNTUK MENYIMPAN DAFTAR KATEGORI
+  const [kategoriList, setKategoriList] = useState([]);
+
+  // 📍 2. FUNGSI UNTUK MENGAMBIL KATEGORI DARI DATABASE (Hanya yang belum dihapus)
+  useEffect(() => {
+    const fetchKategori = async () => {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('name')
+        .is('deleted_at', null);
+      
+      if (!error && data) {
+        setKategoriList(data);
+      }
+    };
+    fetchKategori();
+  }, []);
 
   useEffect(() => {
     if (itemData) {
       setFormData({
         id: itemData.id || '',
         name: itemData.name || '',
-        category: itemData.category || 'Elektronik',
+        category: itemData.category || '',
         stock: itemData.stock || 0,
         location: itemData.location || '',
         date: itemData.date || '' 
@@ -32,7 +50,6 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
     e.preventDefault();
     setLoading(true);
     
-    // 🔥 Jalankan animasi loading dari toast
     const toastId = toast.loading('Sedang memperbarui data...');
 
     try {
@@ -76,7 +93,6 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
         }
       }
 
-      // 🔥 Ubah loading jadi sukses
       toast.success(`Data item ${formData.id} berhasil diperbarui!`, { id: toastId });
       
       if (onSuccess) onSuccess(); 
@@ -84,7 +100,6 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
 
     } catch (error) {
       console.error('Gagal memperbarui item ke Supabase:', error.message);
-      // 🔥 Ubah loading jadi error
       toast.error('Gagal memperbarui database: ' + error.message, { id: toastId });
     } finally {
       setLoading(false);
@@ -120,13 +135,19 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-zinc-700 mb-1">Kategori</label>
+              {/* 📍 3. DROPDOWN KATEGORI SUDAH DINAMIS */}
               <select 
+                required
                 value={formData.category} 
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })} 
                 className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] cursor-pointer"
               >
-                <option value="Elektronik">Elektronik</option>
-                <option value="ATK">ATK</option>
+                <option value="" disabled>Pilih Kategori...</option>
+                {kategoriList.map((kat, index) => (
+                  <option key={index} value={kat.name}>
+                    {kat.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>

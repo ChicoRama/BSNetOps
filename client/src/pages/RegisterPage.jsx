@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FaXmark } from "react-icons/fa6";
 import { useNavigate, Link } from "react-router-dom"; 
 import { supabase } from "../../supabaseClient";
+import toast from "react-hot-toast";
 
 export default function RegisterPage() {
   const navigate = useNavigate(); 
@@ -33,6 +34,7 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
 
     let newError = {};
 
@@ -68,6 +70,8 @@ export default function RegisterPage() {
 
     setLoading(true);
 
+    const toastId = toast.loading("Sedang mendaftarkan akun...");
+
     try {
       // 1. DAFTARKAN KE SUPABASE AUTH & SISIPKAN METADATA
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -89,12 +93,12 @@ export default function RegisterPage() {
       // 🔥 INSERT MANUAL KE TABEL 'user_roles' DIHAPUS DARI SINI
       // Biarkan Database Trigger SQL yang bekerja otomatis di background!
 
-      alert(`Registrasi Berhasil! 🎉\n\nLink verifikasi telah dikirim ke email ${form.email}.\nSilakan cek kotak masuk (atau folder Spam/Junk) Anda dan klik link tersebut sebelum melakukan Login.`);
+      toast.success("Registrasi Berhasil! \nSilahkan cek Email anda untuk verifikasi akun");
       navigate("/login"); 
 
     } catch (err) {
       console.error("Terjadi kesalahan:", err.message);
-      alert("Terjadi kesalahan saat pendaftaran: " + err.message);
+      toast.error("Terjadi kesalahan saat melakukan pendaftaran :", err.message);
     } finally {
       setLoading(false);
     }

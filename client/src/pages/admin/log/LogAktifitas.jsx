@@ -171,7 +171,7 @@ export default function LogAktifitas() {
                     {item.type === 'Masuk' ? (
                       ' menambahkan pasokan barang ke inventaris gudang pusat berupa '
                     ) : (
-                      <> melakukan pengambilan barang untuk dikirim ke <span className="font-bold text-zinc-900 underline decoration-zinc-300 underline-offset-2">{item.unit}</span> berupa </>
+                      <> melakukan request barang <span className="font-bold text-zinc-900 underline decoration-zinc-300 underline-offset-2"></span> berupa </>
                     )}
                     <span className="font-semibold text-[#00664b]">{item.qty} Unit {item.itemName}</span>.
                   </p>

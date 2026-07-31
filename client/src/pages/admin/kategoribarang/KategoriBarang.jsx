@@ -4,10 +4,10 @@ import { supabase } from '../../../../supabaseClient';
 import TambahKategori from './TambahKategori';
 import EditKategori from './EditKategori';
 import toast from 'react-hot-toast';
-import { useSupabaseRealtime } from '../../../hooks/useSupabaseRealtime'; // 🔥 Hook Realtime
+import { useSupabaseRealtime } from '../../../hooks/useSupabaseRealtime';
 
 export default function KategoriBarang() {
-  // 🔥 Data kategori sekarang otomatis realtime, tanpa perlu fetchCategories manual
+  // 🔥 Data kategori sekarang otomatis realtime
   const { data: categories, refetch } = useSupabaseRealtime('categories', '*', {
     orderBy: 'created_at',
     ascending: false,
@@ -58,7 +58,7 @@ export default function KategoriBarang() {
       if (error) throw error;
       
       toast.success(`Kategori "${newCategory.name}" berhasil ditambahkan!`, { id: toastId });
-      refetch(); // 🔥 Realtime otomatis update, ini cuma buat sinkron instan
+      refetch();
       setIsAddOpen(false); 
 
     } catch (error) {
@@ -143,15 +143,30 @@ export default function KategoriBarang() {
       message: `PERINGATAN: Hapus PERMANEN "${name}"? Data ini tidak dapat dibatalkan, dan memori kategori barang akan dihapus selamanya.`,
       type: 'danger',
       onConfirm: async () => {
-        const toastId = toast.loading('Menghapus permanen...');
+        const toastId = toast.loading('Mengecek status kategori...');
+
         try {
-          const { error: updateItemsError } = await supabase
+          // 📍 1. SATPAM BERAKSI: Cek apakah kategori ini masih dipakai di tabel items
+          const { count, error: checkError } = await supabase
             .from('items')
-            .update({ category: '-', previous_category: null })
-            .or(`category.eq.${name},previous_category.eq.${name}`); 
+            .select('*', { count: 'exact', head: true })
+            .or(`category.eq.${name},previous_category.eq.${name}`);
 
-          if (updateItemsError) throw updateItemsError;
+          if (checkError) throw checkError;
 
+          // 📍 2. LOGIKA PENOLAKAN: Kalau masih ada barang yang pakai kategori ini
+          if (count && count > 0) {
+            toast.error(
+              `TIDAK BISA DIHAPUS PERMANEN!\nKategori "${name}" masih terikat dengan barang (aktif/trash).`, 
+              { id: toastId, duration: 5000 }
+            );
+            setConfirmModal({ isOpen: false }); // Tutup modal
+            return; // 🛑 Hentikan proses eksekusi di sini!
+          }
+
+          // 📍 3. KALAU AMAN: Lanjut eksekusi Hapus Permanen
+          toast.loading('Menghapus permanen...', { id: toastId }); 
+          
           const { error: deleteCatError } = await supabase
             .from('categories')
             .delete()
@@ -162,6 +177,7 @@ export default function KategoriBarang() {
           toast.success(`Kategori "${name}" berhasil dihapus permanen.`, { id: toastId });
           refetch(); 
           setConfirmModal({ isOpen: false });
+
         } catch (error) {
           console.error("Gagal menghapus permanen kategori:", error.message);
           toast.error("Gagal menghapus: " + error.message, { id: toastId });

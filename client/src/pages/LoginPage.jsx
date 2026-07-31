@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
 import { useNavigate, Link } from "react-router-dom"; 
 import { supabase } from "../../supabaseClient"; 
@@ -7,7 +7,8 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
-  const [isLoading, setIsLoading] = useState(false); // 🔥 Tambahan untuk deteksi loading
+  const [isLoading, setIsLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const [form, setForm] = useState({
     username: "", 
@@ -22,6 +23,14 @@ export default function LoginPage() {
     password: "",
     general: "", 
   });
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem("rememberedEmail");
+    if(savedEmail){
+      setForm(prev => ({ ...prev, email: savedEmail }));
+      setRememberMe(true);
+    }
+  }, []);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -61,7 +70,7 @@ export default function LoginPage() {
 
       // Jika akun terdeteksi ditangguhkan (is_suspended = true), hentikan proses login
       if (roleData && roleData.is_suspended === true) {
-        alert("❌ AKUN DITANGGUHKAN!\n\nAnda tidak memiliki akses untuk masuk ke dalam sistem. Silakan hubungi Administrator Gudang untuk informasi lebih lanjut.");
+        toast.error("❌ AKUN DITANGGUHKAN!\n\nAnda tidak memiliki akses untuk masuk ke dalam sistem. Silakan hubungi Administrator Gudang untuk informasi lebih lanjut.");
         setIsLoading(false);
         return; 
       }
@@ -122,7 +131,7 @@ export default function LoginPage() {
     e.preventDefault();
 
     if (!forgotEmail) {
-      alert("Email wajib diisi");
+      toast.error("Email wajib diisi");
       return;
     }
 
@@ -133,13 +142,21 @@ export default function LoginPage() {
     });
 
     if (error) {
-      alert(`Gagal: ${error.message}`);
+      toast.error(`Gagal: ${error.message}`, { id: toastId});
     } else {
-      alert("Link reset password berhasil dikirim ke email kamu!");
+      toast.success("Link reset password berhasil dikirim ke email kamu!");
       setShowForgot(false);
       setForgotEmail("");
     }
   };
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem("rememberedEmail");
+    if (savedEmail) {
+      setForm(prev => ({ ...prev, email: savedEmail}));
+      setRememberMe(false);
+    }
+  }, []);
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-100 text-slate-900">

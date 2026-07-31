@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { supabase } from '../../supabaseClient';
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
-const COLORS = ['#00664b', '#3B82F6', '#FFBF00', '#8B5CF6', '#EC4899', '#14B8A6'];
+const COLORS = ['#00664b', '#3B82F6', '#FFBF00', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#84CC16'];
 
 export default function AdminDashboard({ role = 'admin' }) {
   const [loading, setLoading] = useState(true);
@@ -17,36 +17,36 @@ export default function AdminDashboard({ role = 'admin' }) {
   // 🔥 SUPABASE REALTIME DI-AKTIFKAN
   // ==========================================
   useEffect(() => {
-    // 1. Tarik data pertama kali halaman dibuka
     fetchDashboardData();
 
-    // 2. Subscribe ke Supabase Realtime (Memantau semua perubahan di database)
     const dashboardChannel = supabase
       .channel('realtime-admin-dashboard')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public' }, // Memantau semua tabel yang terhubung ke dashboard
+        { event: '*', schema: 'public' }, 
         (payload) => {
           console.log('Realtime Update Diterima di Dashboard:', payload);
-          // Tarik ulang data secara diam-diam (isBackground = true)
           fetchDashboardData(true);
         }
       )
       .subscribe();
 
-    // 3. Bersihkan channel saat komponen ditutup
     return () => {
       supabase.removeChannel(dashboardChannel);
     };
   }, []);
 
-  // 🔥 Parameter isBackground ditambahkan
   const fetchDashboardData = async (isBackground = false) => {
-    // Hanya tampilkan loading screen jika bukan background refresh
     if (!isBackground) setLoading(true);
 
     try {
-      // 1. Ambil data dari tabel 'items' untuk menghitung stok & distribusi kategori
+      // 🔥 1. Ambil Kategori Aktif dulu biar kategori baru terdaftar walau stok 0
+      const { data: catData } = await supabase
+        .from('categories')
+        .select('name')
+        .is('deleted_at', null);
+
+      // 🔥 2. Ambil data dari tabel 'items'
       const { data: itemsData, error: itemsError } = await supabase
         .from('items')
         .select('*')
@@ -57,13 +57,25 @@ export default function AdminDashboard({ role = 'admin' }) {
       let totalStock = 0;
       const categoryMap = {};
 
+      // Inisialisasi semua kategori dengan nilai 0
+      if (catData) {
+        catData.forEach(c => {
+          categoryMap[c.name] = 0;
+        });
+      }
+
+      // Mulai hitung stok dari items
       if (itemsData) {
         itemsData.forEach(item => {
           const qty = parseInt(item.stock) || 0;
           totalStock += qty;
 
-          const cat = item.category || 'Lainnya';
-          if (!categoryMap[cat]) categoryMap[cat] = 0;
+          const cat = item.category && item.category !== '-' ? item.category : 'Lainnya';
+          
+          // Kalau ada kategori dari barang lama yang nggak kedaftar, tambahin
+          if (categoryMap[cat] === undefined) {
+            categoryMap[cat] = 0;
+          }
           categoryMap[cat] += qty;
         });
 
@@ -76,7 +88,7 @@ export default function AdminDashboard({ role = 'admin' }) {
         setCategoryData(formattedCategoryData);
       }
 
-      // 2. Ambil data aktivitas langsung dari tabel 'activity_logs'
+      // 🔥 3. Ambil data aktivitas
       const { data: logData, error: logError } = await supabase
         .from('activity_logs')
         .select('*')
@@ -84,7 +96,7 @@ export default function AdminDashboard({ role = 'admin' }) {
 
       if (logError) throw logError;
 
-      // 🔥 3. Ambil data requests untuk mendapatkan NAMA UNIT/CABANG secara akurat
+      // 🔥 4. Ambil data requests untuk NAMA UNIT
       const { data: reqData } = await supabase
         .from('requests')
         .select('id, unit');
@@ -100,15 +112,11 @@ export default function AdminDashboard({ role = 'admin' }) {
           
           const displayDate = log.date || (log.created_at ? new Date(log.created_at).toLocaleDateString('id-ID') : '-');
 
-          // 🔥 LOGIKA PENCARIAN UNIT CABANG LINTAS TABEL
           let unitDisplay = 'Gudang Pusat';
           if (logType === 'Masuk') {
             unitDisplay = 'Gudang Pusat';
           } else {
-            // Cocokkan transaction_id (misal REQ-...) dengan id di tabel requests
             const matchedRequest = reqData?.find(r => r.id === log.transaction_id);
-            
-            // Jika ketemu di tabel requests, gunakan unit-nya. Jika tidak, baru ambil data mentah dari log
             unitDisplay = matchedRequest?.unit || log.unit || 'Kantor Cabang';
           }
 
@@ -128,7 +136,6 @@ export default function AdminDashboard({ role = 'admin' }) {
 
     } catch (error) {
       console.error('Gagal memuat data AdminDashboard:', error.message);
-      // Hindari munculin toast error kalau ini background proses
       if (!isBackground) toast.error('Gagal memuat data dashboard!');
     } finally {
       if (!isBackground) setLoading(false);
@@ -136,7 +143,7 @@ export default function AdminDashboard({ role = 'admin' }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-bold text-white capitalize">Admin Overview</h2>
@@ -186,8 +193,8 @@ export default function AdminDashboard({ role = 'admin' }) {
                     formatter={(value, entry) => {
                       const { payload } = entry;
                       return (
-                        <span className="text-zinc-600 font-medium">
-                          {value}: <span className="font-semi-bold text-zinc-500">{payload.value} Unit</span>
+                        <span className="text-zinc-600 font-medium text-sm">
+                          {value}: <span className="font-semibold text-zinc-800">{payload.value} Unit</span>
                         </span>
                       );
                     }}
