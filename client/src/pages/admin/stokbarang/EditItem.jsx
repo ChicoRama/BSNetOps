@@ -128,7 +128,7 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
               required 
               value={formData.name} 
               onChange={(e) => setFormData({ ...formData, name: e.target.value })} 
-              className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white" 
+              className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white" maxLength={50} 
             />
           </div>
 
