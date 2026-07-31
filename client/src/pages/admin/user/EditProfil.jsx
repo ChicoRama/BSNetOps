@@ -3,6 +3,10 @@ import { User, Mail, Shield, Camera, Save, Building, Briefcase, Phone } from 'lu
 import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast'; // 🔥 Import Toast
 
+const toTitleCase = (str) => {
+  return str.replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 export default function EditProfil() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -77,7 +81,11 @@ export default function EditProfil() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setProfile(prev => ({ ...prev, [name]: value }));
+
+    // 🔥 Auto-capitalize khusus untuk field nama lengkap
+    const finalValue = name === 'namaLengkap' ? toTitleCase(value) : value;
+
+    setProfile(prev => ({ ...prev, [name]: finalValue }));
   };
 
   // 2. SIMPAN PERUBAHAN KE DATABASE SUPABASE
