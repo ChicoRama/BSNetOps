@@ -148,6 +148,22 @@ export default function UserDashboard({ setCurrentView }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           
           <button 
+            onClick={() => setCurrentView && setCurrentView('aset')}
+            className="flex items-center justify-between p-5 bg-white border border-zinc-200 rounded-xl shadow-md hover:border-amber-500 hover:shadow-lg transition-all group text-left w-full hover:scale-[1.01] cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-amber-50 text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors rounded-lg">
+                <Package size={24} />
+              </div>
+              <div>
+                <p className="font-semibold text-zinc-900">Lihat Inventory</p>
+                <p className="text-xs text-zinc-500 mt-0.5">Cek ketersediaan semua barang</p>
+              </div>
+            </div>
+            <ArrowRight size={16} className="text-zinc-400 group-hover:text-amber-500 group-hover:translate-x-1 transition-all" />
+          </button>
+
+          <button 
             onClick={() => setCurrentView && setCurrentView('ajukan-permintaan')}
             className="flex items-center justify-between p-5 bg-white border border-zinc-200 rounded-xl shadow-md hover:border-[#00664b] hover:shadow-lg transition-all group text-left w-full hover:scale-[1.01] cursor-pointer"
           >
@@ -163,7 +179,7 @@ export default function UserDashboard({ setCurrentView }) {
             <ArrowRight size={16} className="text-zinc-400 group-hover:text-[#00664b] group-hover:translate-x-1 transition-all" />
           </button>
 
-          <button 
+                    <button 
             onClick={() => setCurrentView && setCurrentView('riwayat-permintaan')}
             className="flex items-center justify-between p-5 bg-white border border-zinc-200 rounded-xl shadow-md hover:border-blue-500 hover:shadow-lg transition-all group text-left w-full hover:scale-[1.01] cursor-pointer"
           >
@@ -177,22 +193,6 @@ export default function UserDashboard({ setCurrentView }) {
               </div>
             </div>
             <ArrowRight size={16} className="text-zinc-400 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-          </button>
-
-          <button 
-            onClick={() => setCurrentView && setCurrentView('aset')}
-            className="flex items-center justify-between p-5 bg-white border border-zinc-200 rounded-xl shadow-md hover:border-amber-500 hover:shadow-lg transition-all group text-left w-full hover:scale-[1.01] cursor-pointer"
-          >
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-amber-50 text-amber-600 group-hover:bg-amber-500 group-hover:text-white transition-colors rounded-lg">
-                <Package size={24} />
-              </div>
-              <div>
-                <p className="font-semibold text-zinc-900">Lihat Inventory</p>
-                <p className="text-xs text-zinc-500 mt-0.5">Cek ketersediaan semua barang</p>
-              </div>
-            </div>
-            <ArrowRight size={16} className="text-zinc-400 group-hover:text-amber-500 group-hover:translate-x-1 transition-all" />
           </button>
 
         </div>

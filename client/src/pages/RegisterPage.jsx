@@ -79,7 +79,8 @@ export default function RegisterPage() {
             username: form.username,
             staff_id: form.staffId,
             unit: form.unit
-          }
+          },
+          emailRedirectTo: `${window.location.origin}/terverifikasi`
         }
       });
 
