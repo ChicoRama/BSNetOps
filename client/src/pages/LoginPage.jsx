@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
 import { useNavigate, Link } from "react-router-dom"; 
 import { supabase } from "../../supabaseClient"; 
+import toast from "react-hot-toast"; // 🔥 IMPORT WAJIB DITAMBAHKAN BIAR GAK FREEZE
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
 
   const [form, setForm] = useState({
     username: "", 
@@ -24,11 +24,11 @@ export default function LoginPage() {
     general: "", 
   });
 
+  // Cek apakah ada email yang tersimpan sebelumnya
   useEffect(() => {
     const savedEmail = localStorage.getItem("rememberedEmail");
     if(savedEmail){
-      setForm(prev => ({ ...prev, email: savedEmail }));
-      setRememberMe(true);
+      setForm(prev => ({ ...prev, username: savedEmail, remember: true }));
     }
   }, []);
 
@@ -47,7 +47,7 @@ export default function LoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (isLoading) return; // Cegah tombol diklik berkali-kali
+    if (isLoading) return; 
 
     let newError = { username: "", password: "", general: "" };
 
@@ -57,25 +57,31 @@ export default function LoginPage() {
     setError(newError);
     if (newError.username || newError.password) return;
 
-    setIsLoading(true); // Tombol berubah jadi loading...
+    setIsLoading(true); 
     const inputEmail = form.username.toLowerCase();
 
     try {
-      // 1. CEK STATUS PENANGGUHAN AKUN DI TABEL user_roles SEBELUM LOGIN
-      const { data: roleData, error: roleError } = await supabase
+      const { data: roleData } = await supabase
         .from('user_roles')
-        .select('role, is_suspended')
+        .select('role, is_suspended', 'username')
         .eq('email', inputEmail)
         .maybeSingle(); 
 
-      // Jika akun terdeteksi ditangguhkan (is_suspended = true), hentikan proses login
+      // 🔥 DESAIN NOTIFIKASI SUSPEND DIPERBAGUS
       if (roleData && roleData.is_suspended === true) {
-        toast.error("❌ AKUN DITANGGUHKAN!\n\nAnda tidak memiliki akses untuk masuk ke dalam sistem. Silakan hubungi Administrator Gudang untuk informasi lebih lanjut.");
+        toast.error(
+          (t) => (
+            <div>
+              <b className="text-red-700 font-bold text-sm">Akun Ditangguhkan!</b>
+              <p className="text-xs mt-1 text-slate-600">Anda tidak memiliki akses ke dalam sistem. Silakan hubungi Admin Gudang.</p>
+            </div>
+          ), 
+          { duration: 5000, icon: '⛔' }
+        );
         setIsLoading(false);
         return; 
       }
 
-      // 2. PROSES LOGIN KE SUPABASE AUTH (Hanya berjalan jika tidak disuspend)
       const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
         email: inputEmail, 
         password: form.password,
@@ -87,30 +93,34 @@ export default function LoginPage() {
         return;
       }
 
-      // 3. TENTUKAN ROLE
       let userRole = "user"; 
       if (roleData && roleData.role) {
         userRole = roleData.role.toLowerCase(); 
       }
 
-      // 4. SIMPAN TOKEN & PROFIL DASAR BESERTA ROLE KE LOCALSTORAGE
       if (data.session) {
         localStorage.setItem("token", data.session.access_token);
         localStorage.setItem("access_token", data.session.access_token);
+
+        // 🔥 FUNGSI INGATKAN SAYA (REMEMBER ME) DIPERBAIKI
+        if (form.remember) {
+          localStorage.setItem("rememberedEmail", inputEmail);
+        } else {
+          localStorage.removeItem("rememberedEmail");
+        }
 
         const profileInfo = {
           email: inputEmail,
           namaLengkap: data.user?.user_metadata?.full_name || inputEmail.split('@')[0],
           nipPegawai: "",
           divisi: "",
-          role: userRole,     // 🔥 Role berhasil disimpan!
-          jabatan: userRole,  // 🔥 Role berhasil disimpan!
+          role: userRole,     
+          jabatan: userRole,  
           noTelepon: ""
         };
         localStorage.setItem("userProfile", JSON.stringify(profileInfo));
       }
 
-      // 5. REDIRECT BERDASARKAN ROLE
       if (userRole === "admin") {
         navigate("/admin");
       } else if (userRole === "manager") {
@@ -123,7 +133,7 @@ export default function LoginPage() {
       console.error("Terjadi kesalahan sistem saat login:", err);
       setError({ ...newError, general: "Terjadi kesalahan koneksi ke server." });
     } finally {
-      setIsLoading(false); // Matikan loading
+      setIsLoading(false);
     }
   };
 
@@ -135,28 +145,29 @@ export default function LoginPage() {
       return;
     }
 
-    // 🔥 redirectTo memastikan link di email mengarah ke halaman /reset-password
-    // milik aplikasi kita (bukan default Supabase / localhost bawaan development)
+    const toastId = toast.loading("Mengirim link..."); // 🔥 Mencegah Bug Freeze karena toastId kosong
+
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
 
     if (error) {
-      toast.error(`Gagal: ${error.message}`, { id: toastId});
+      toast.error(`Gagal: ${error.message}`, { id: toastId });
     } else {
-      toast.success("Link reset password berhasil dikirim ke email kamu!");
+      // 🔥 DESAIN NOTIFIKASI KIRIM EMAIL DIPERBAGUS
+      toast.success(
+        (t) => (
+          <div>
+            <b className="text-[#00634b] font-bold text-sm">Link Terkirim!</b>
+            <p className="text-xs mt-1 text-slate-600">Silakan cek kotak masuk atau folder spam email Anda.</p>
+          </div>
+        ), 
+        { id: toastId, duration: 5000, icon: '✉️' }
+      );
       setShowForgot(false);
       setForgotEmail("");
     }
   };
-
-  useEffect(() => {
-    const savedEmail = localStorage.getItem("rememberedEmail");
-    if (savedEmail) {
-      setForm(prev => ({ ...prev, email: savedEmail}));
-      setRememberMe(false);
-    }
-  }, []);
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-100 text-slate-900">
@@ -171,13 +182,13 @@ export default function LoginPage() {
       {/* LOGIN MODAL */}
       {!showForgot && (
         <section className="relative z-10 flex min-h-screen items-center justify-center px-6">
-          <div className="relative w-full max-w-[400px] rounded-2xl bg-white px-8 py-8 shadow-2xl">
+          <div className="relative w-full max-w-[400px] rounded-2xl bg-white px-8 py-8 shadow-2xl animate-in zoom-in-95 duration-300">
 
             {/* CLOSE */}
             <button
               type="button"
               onClick={() => navigate("/")}
-              className="absolute right-5 top-5 cursor-pointer text-xl text-slate-900 transition hover:scale-110 hover:text-[#00634b]"
+              className="absolute right-5 top-5 cursor-pointer text-xl text-slate-400 transition hover:scale-110 hover:text-red-500"
             >
               <FaXmark />
             </button>
@@ -196,7 +207,7 @@ export default function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-4">
               
               {error.general && (
-                <div className="rounded-lg bg-red-100 p-2 text-center text-sm text-red-600">
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center text-sm font-semibold text-red-600">
                   {error.general}
                 </div>
               )}
@@ -211,11 +222,11 @@ export default function LoginPage() {
                   name="username"
                   value={form.username}
                   onChange={handleChange}
-                  placeholder="contoh@email.com"
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
+                  placeholder="contoh@bsn.go.id"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
                 />
                 {error.username && (
-                  <p className="mt-1 text-xs text-red-500">
+                  <p className="mt-1 text-xs text-red-500 font-medium">
                     {error.username}
                   </p>
                 )}
@@ -231,39 +242,39 @@ export default function LoginPage() {
                   name="password"
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="Password"
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
+                  placeholder="••••••••"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-9 cursor-pointer text-slate-600 hover:text-[#00634b] active:scale-90"
+                  className="absolute right-3 top-9 cursor-pointer text-slate-400 hover:text-[#00634b] active:scale-90 transition-all"
                 >
                   {showPassword ? <FaEyeSlash /> : <FaEye />}
                 </button>
                 {error.password && (
-                  <p className="mt-1 text-xs text-red-500">
+                  <p className="mt-1 text-xs text-red-500 font-medium">
                     {error.password}
                   </p>
                 )}
               </div>
 
               {/* REMEMBER + FORGOT */}
-              <div className="flex items-center justify-between text-xs">
-                <label className="flex cursor-pointer items-center gap-2 font-medium select-none">
+              <div className="flex items-center justify-between text-xs pt-1">
+                <label className="flex cursor-pointer items-center gap-2 font-medium select-none text-slate-600 hover:text-slate-900 transition-colors">
                   <input
                     type="checkbox"
                     name="remember"
                     checked={form.remember}
                     onChange={handleChange}
-                    className="cursor-pointer accent-[#00634b]"
+                    className="cursor-pointer accent-[#00634b] w-4 h-4 rounded"
                   />
                   Ingat Saya
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowForgot(true)}
-                  className="cursor-pointer text-[#00634b] hover:underline"
+                  className="cursor-pointer font-bold text-[#00634b] hover:underline"
                 >
                   Lupa password?
                 </button>
@@ -273,18 +284,18 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition hover:-translate-y-1 hover:bg-[#004d3a] disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full mt-2 cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-95 hover:bg-[#004d3a] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
               >
-                {isLoading ? "Memproses..." : "Log in"}
+                {isLoading ? "Memproses Data..." : "Log in"}
               </button>
 
             </form>
 
-            <p className="mt-5 text-center text-sm">
+            <p className="mt-6 text-center text-sm text-slate-500">
             Belum punya akun?{" "}
             <Link
                 to="/register"
-                className="font-semibold text-[#00634b] hover:underline cursor-pointer"
+                className="font-bold text-[#00634b] hover:underline cursor-pointer"
             >
                 Daftar Sekarang
             </Link>
@@ -296,30 +307,36 @@ export default function LoginPage() {
 
       {/* FORGOT PASSWORD MODAL */}
       {showForgot && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 px-6">
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-[#00634b]">
-                Reset Password
-              </h2>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm px-6 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="mb-4 flex items-center justify-between border-b pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-zinc-900">
+                  Reset Password
+                </h2>
+                <p className="text-[11px] text-zinc-500 mt-0.5">Kami akan mengirimkan link untuk memulihkan akunmu.</p>
+              </div>
               <button
                 onClick={() => setShowForgot(false)}
-                className="cursor-pointer text-xl"
+                className="cursor-pointer text-xl p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-red-500 transition-all"
               >
                 <FaXmark />
               </button>
             </div>
-            <form onSubmit={handleForgot} className="space-y-3">
-              <input
-                type="email"
-                placeholder="Masukkan email kamu"
-                value={forgotEmail}
-                onChange={(e) => setForgotEmail(e.target.value)}
-                className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
-              />
+            <form onSubmit={handleForgot} className="space-y-4 mt-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">Email Terdaftar</label>
+                <input
+                  type="email"
+                  placeholder="admin@bsn.go.id"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  className="w-full rounded-lg bg-zinc-50 border border-zinc-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 focus:bg-white transition-all"
+                />
+              </div>
               <button
                 type="submit"
-                className="w-full cursor-pointer rounded-lg bg-[#00634b] py-2 text-sm font-bold text-white hover:bg-[#004d3a]"
+                className="w-full cursor-pointer rounded-lg bg-[#00634b] py-2.5 text-sm font-bold text-white shadow-md hover:shadow-lg transition-all active:scale-95 hover:bg-[#004d3a]"
               >
                 Kirim Link Reset
               </button>

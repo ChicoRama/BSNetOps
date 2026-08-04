@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa6";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../supabaseClient";
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -81,7 +81,7 @@ export default function ResetPassword() {
 
       if (updateError) throw updateError;
 
-      alert("Password berhasil diubah! Silakan login dengan password baru Anda.");
+      toast.success("Password berhasil diubah! Silakan login dengan password baru Anda.");
       await supabase.auth.signOut();
       navigate("/login");
     } catch (err) {
