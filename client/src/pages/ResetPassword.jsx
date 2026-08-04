@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa6";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../supabaseClient";
+import toast from "react-hot-toast";
 
 export default function ResetPassword() {
   const navigate = useNavigate();
