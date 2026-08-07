@@ -16,7 +16,7 @@ export default function RegisterPage() {
   });
 
   const [error, setError] = useState({});
-  const [loading, setLoading] = useState(false); // 🔥 Tambahan state loading
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -34,7 +34,6 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
 
     let newError = {};
 
@@ -44,7 +43,6 @@ export default function RegisterPage() {
     if (!form.password) newError.password = "Password wajib diisi";
     if (!form.confirmPassword)
       newError.confirmPassword = "Konfirmasi password wajib diisi";
-    if (!form.staffId) newError.staffId = "ID Staff wajib diisi";
     if (!form.unit) newError.unit = "Unit wajib diisi";
 
     // VALIDASI PASSWORD
@@ -54,12 +52,7 @@ export default function RegisterPage() {
       }
     }
 
-    // VALIDASI ID STAFF (dummy rule)
-    if (form.staffId && !form.staffId.startsWith("BSN")) {
-      newError.staffId = "ID Staff tidak valid (harus diawali BSN)";
-    }
-
-    // 🔥 VALIDASI DOMAIN EMAIL (Saat ini gmail.com, nanti ubah ke btn.co.id)
+    // VALIDASI DOMAIN EMAIL
     const allowedDomain = "@gmail.com";
     if (form.email && !form.email.toLowerCase().endsWith(allowedDomain)) {
       newError.email = `Wajib menggunakan email berakhiran ${allowedDomain}`;
@@ -69,17 +62,38 @@ export default function RegisterPage() {
     if (Object.keys(newError).length > 0) return;
 
     setLoading(true);
-
-    const toastId = toast.loading("Sedang mendaftarkan akun...");
+    const toastId = toast.loading("Memeriksa data...");
 
     try {
-      // 1. DAFTARKAN KE SUPABASE AUTH & SISIPKAN METADATA
+      // 🔥 1. CEK DULU: APAKAH EMAIL SUDAH TERDAFTAR DI DATABASE?
+      const { data: existingUser, error: checkError } = await supabase
+        .from('user_roles')
+        .select('email')
+        .eq('email', form.email)
+        .maybeSingle();
+
+      if (existingUser) {
+        toast.error(
+          (t) => (
+            <div>
+              <b className="text-red-700 font-bold text-sm">Pendaftaran Gagal!</b>
+              <p className="text-xs mt-1 text-slate-600">Email ini sudah terdaftar di sistem. Silakan gunakan email lain atau langsung Login.</p>
+            </div>
+          ), 
+          { id: toastId, duration: 5000, icon: '⚠️' }
+        );
+        setLoading(false);
+        return; // Hentikan proses pendaftaran
+      }
+
+      toast.loading("Mendaftarkan akun...", { id: toastId });
+
+      // 2. DAFTARKAN KE SUPABASE AUTH & SISIPKAN METADATA
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
         options: {
           data: {
-            // Data ini akan ditangkap oleh Trigger SQL di database
             username: form.username,
             staff_id: form.staffId,
             unit: form.unit
@@ -90,15 +104,35 @@ export default function RegisterPage() {
 
       if (authError) throw authError;
 
-      // 🔥 INSERT MANUAL KE TABEL 'user_roles' DIHAPUS DARI SINI
-      // Biarkan Database Trigger SQL yang bekerja otomatis di background!
-
-      toast.success("Registrasi Berhasil! \nSilahkan cek Email anda untuk verifikasi akun");
+      // 🔥 3. DESAIN TOAST SUKSES YANG LEBIH CANTIK
+      toast.success(
+        (t) => (
+          <div>
+            <b className="text-[#00634b] font-bold text-sm">Registrasi Berhasil!</b>
+            <p className="text-xs mt-1 text-slate-600">Silakan cek kotak masuk email Anda untuk verifikasi akun sebelum login.</p>
+          </div>
+        ), 
+        { id: toastId, duration: 6000, icon: '🎉' }
+      );
+      
       navigate("/login"); 
 
     } catch (err) {
       console.error("Terjadi kesalahan:", err.message);
-      toast.error("Terjadi kesalahan saat melakukan pendaftaran :", err.message);
+      let errorMessage = err.message;
+      if (errorMessage.toLowerCase().includes('already registered')) {
+        errorMessage = 'Email sudah terdaftar di sistem autentikasi.';
+      }
+
+      toast.error(
+        (t) => (
+          <div>
+            <b className="text-red-700 font-bold text-sm">Pendaftaran Gagal!</b>
+            <p className="text-xs mt-1 text-slate-600">{errorMessage}</p>
+          </div>
+        ), 
+        { id: toastId, duration: 5000, icon: '❌' }
+      );
     } finally {
       setLoading(false);
     }
@@ -117,13 +151,13 @@ export default function RegisterPage() {
       {/* CARD */}
       <section className="relative z-10 flex min-h-screen items-center justify-center px-6">
 
-        <div className="relative w-full max-w-[520px] rounded-2xl bg-white px-8 py-8 shadow-2xl">
+        <div className="relative w-full max-w-[520px] rounded-2xl bg-white px-8 py-8 shadow-2xl animate-in zoom-in-95 duration-300">
 
           {/* CLOSE */}
           <button
             type="button"
             onClick={() => navigate("/")}
-            className="absolute right-5 top-5 text-xl text-slate-900 transition hover:scale-110 hover:text-[#00634b]"
+            className="absolute right-5 top-5 text-xl text-slate-400 transition hover:scale-110 hover:text-red-500 cursor-pointer"
           >
             <FaXmark />
           </button>
@@ -150,11 +184,11 @@ export default function RegisterPage() {
                   name="username"
                   value={form.username}
                   onChange={handleChange}
-                  placeholder="Masukkan username"
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
+                  placeholder="Masukkan nama"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40 transition-all"
                 />
                 {error.username && (
-                  <p className="text-xs text-red-500 mt-1">{error.username}</p>
+                  <p className="text-xs font-medium text-red-500 mt-1">{error.username}</p>
                 )}
               </div>
 
@@ -166,11 +200,11 @@ export default function RegisterPage() {
                   name="password"
                   value={form.password}
                   onChange={handleChange}
-                  placeholder="Masukkan password"
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
+                  placeholder="••••••••"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40 transition-all"
                 />
                 {error.password && (
-                  <p className="text-xs text-red-500 mt-1">{error.password}</p>
+                  <p className="text-xs font-medium text-red-500 mt-1">{error.password}</p>
                 )}
               </div>
 
@@ -181,11 +215,11 @@ export default function RegisterPage() {
                   name="email"
                   value={form.email}
                   onChange={handleChange}
-                  placeholder="Contoh: budi@gmail.com"
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
+                  placeholder="contoh@gmail.com"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40 transition-all"
                 />
                 {error.email && (
-                  <p className="text-xs text-red-500 mt-1">{error.email}</p>
+                  <p className="text-xs font-medium text-red-500 mt-1">{error.email}</p>
                 )}
               </div>
 
@@ -199,41 +233,24 @@ export default function RegisterPage() {
                   name="confirmPassword"
                   value={form.confirmPassword}
                   onChange={handleChange}
-                  placeholder="Ulangi password"
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
+                  placeholder="••••••••"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40 transition-all"
                 />
                 {error.confirmPassword && (
-                  <p className="text-xs text-red-500 mt-1">
+                  <p className="text-xs font-medium text-red-500 mt-1">
                     {error.confirmPassword}
                   </p>
                 )}
               </div>
 
-              {/* ID STAFF */}
-              <div>
-                <label className="text-sm font-semibold">ID Staff</label>
-
-                <input
-                  name="staffId"
-                  value={form.staffId}
-                  onChange={handleChange}
-                  placeholder="Contoh: BSN-001"
-                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
-                />
-
-                {error.staffId && (
-                  <p className="text-xs text-red-500 mt-1">{error.staffId}</p>
-                )}
-              </div>
-
               {/* UNIT */}
-              <div>
+              <div className="col-span-2">
                 <label className="text-sm font-semibold">Unit</label>
                 <select
                   name="unit"
                   value={form.unit}
                   onChange={handleChange}
-                  className="w-full cursor-pointer rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/40"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
                 >
                   <option value="" disabled hidden>Pilih Unit</option>
                   <option value="KC Semarang">KC Semarang</option>
@@ -245,7 +262,7 @@ export default function RegisterPage() {
                   <option value="KCP Magelang">KCP Magelang</option>
                 </select>
                 {error.unit && (
-                  <p className="text-xs text-red-500 mt-1">{error.unit}</p>
+                  <p className="text-xs font-medium text-red-500 mt-1">{error.unit}</p>
                 )}
               </div>
 
@@ -255,18 +272,18 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#004d3a] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+              className="w-full mt-2 cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-95 hover:bg-[#004d3a] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
             >
-              {loading ? "Mendaftarkan Akun..." : "Daftar"}
+              {loading ? "Memproses Pendaftaran..." : "Daftar Akun"}
             </button>
           </form>
 
           {/* FOOTER */}
-          <p className="mt-5 text-center text-sm">
+          <p className="mt-6 text-center text-sm text-slate-500">
             Sudah punya akun?{" "}
             <Link
               to="/login"
-              className="font-semibold text-[#00634b] hover:underline"
+              className="font-bold text-[#00634b] hover:underline cursor-pointer"
             >
               Masuk Sekarang
             </Link>

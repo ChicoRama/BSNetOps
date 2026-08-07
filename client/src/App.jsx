@@ -7,6 +7,7 @@ import { supabase } from '../supabaseClient.js';
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ResetPassword from './pages/ResetPassword.jsx';
 
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
@@ -135,6 +136,7 @@ export default function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* ================= ROUTE ROLE: ADMIN ================= */}
         {/* 🔒 Hanya bisa diakses oleh 'admin' atau 'head unit' */}
