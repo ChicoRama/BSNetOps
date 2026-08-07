@@ -116,7 +116,7 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
           .is('deleted_at', null);
 
         if (itemsData && !itemsError) {
-          const criticalItems = itemsData.filter(item => (parseInt(item.stock) || 0) <= 5);
+          const criticalItems = itemsData.filter(item => (parseInt(item.stock) || 0) <= 7);
           
           if (criticalItems.length > 0) {
             const stockAlertNotifs = criticalItems.map(item => ({
