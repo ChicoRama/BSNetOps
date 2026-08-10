@@ -1,435 +1,361 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Edit3, Trash2, Search, ArrowLeft, XCircle, AlertTriangle, RefreshCw, Download, ClipboardCheck } from 'lucide-react';
-import TambahItem from './TambahItem';
-import EditItem from './EditItem';
-import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx'; // 🔥 Import library excel
+import { useEffect, useState } from "react";
+import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
+import { useNavigate, Link } from "react-router-dom"; 
+import { supabase } from "../../supabaseClient"; 
+import toast from "react-hot-toast"; 
 
-export default function StokBarang({ role = 'admin' }) {
-  const isAdmin = role === 'admin';
-  const [isAddOpen, setIsAddOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [isOpnameOpen, setIsOpnameOpen] = useState(false); // State untuk Modal Opname
-  const [selectedItem, setSelectedItem] = useState(null);
-  
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function LoginPage() {
+  const navigate = useNavigate();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const [showTrash, setShowTrash] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('Semua');
-  const [sortOrder, setSortOrder] = useState('none');
-
-  const [confirmModal, setConfirmModal] = useState({
-    isOpen: false,
-    title: '',
-    message: '',
-    type: 'danger', 
-    onConfirm: () => {}
+  // State form menggunakan namaLengkap (tapi bisa menerima email juga)
+  const [form, setForm] = useState({
+    namaLengkap: "", 
+    password: "",
+    remember: false,
   });
 
+  const [forgotEmail, setForgotEmail] = useState("");
+
+  const [error, setError] = useState({
+    namaLengkap: "", 
+    password: "",
+    general: "", 
+  });
+
+  // Cek apakah ada kredensial yang tersimpan sebelumnya
   useEffect(() => {
-    fetchItems();
-
-    const channel = supabase
-      .channel('realtime-stok-barang')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'items' },
-        () => fetchItems(true)
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    const savedName = localStorage.getItem("rememberedName");
+    if(savedName){
+      setForm(prev => ({ ...prev, namaLengkap: savedName, remember: true }));
+    }
   }, []);
 
-  const fetchItems = async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('items')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      if (data) setItems(data);
-    } catch (error) {
-      console.error('Gagal mengambil data inventaris:', error.message);
-      if (!isBackground) toast.error('Gagal mengambil data inventaris!');
-    } finally {
-      if (!isBackground) setLoading(false);
-    }
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm({
+      ...form,
+      [name]: type === "checkbox" ? checked : value,
+    });
+    setError({
+      ...error,
+      [name]: "",
+      general: "", 
+    });
   };
 
-  const handleEditClick = (item) => {
-    setSelectedItem(item);
-    setIsEditOpen(true);
-  };
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (isLoading) return; 
 
-  const handleSoftDelete = async (item) => {
+    let newError = { namaLengkap: "", password: "", general: "" };
+
+    // 🔥 Peringatan disesuaikan
+    if (!form.namaLengkap) newError.namaLengkap = "Masukkan Email atau Nama Lengkap";
+    if (!form.password) newError.password = "Masukkan password";
+
+    setError(newError);
+    if (newError.namaLengkap || newError.password) return;
+
+    setIsLoading(true); 
+    const inputIdentitas = form.namaLengkap.trim();
+
     try {
-      const { count, error: checkError } = await supabase
-        .from('request_items')
-        .select('*', { count: 'exact', head: true })
-        .eq('kode_barang', item.id);
+      // 🔥 1. CARI USER BERDASARKAN EMAIL ATAU NAMA LENGKAP DI DATABASE
+      const { data: roleData, error: dbError } = await supabase
+        .from('user_roles')
+        .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon')
+        .or(`email.eq.${inputIdentitas}`) // Bisa pakai email ATAU nama
+        .maybeSingle(); 
 
-      if (count && count > 0) {
-        toast.error(`TIDAK BISA DIHAPUS!\nBarang "${item.name}" sudah pernah di-request.`, { duration: 3000 });
+      // Jika data tidak ditemukan sama sekali
+      if (!roleData || !roleData.email) {
+        setError({ ...newError, general: "Akun tidak terdaftar di sistem." });
+        setIsLoading(false);
         return;
       }
 
-      setConfirmModal({
-        isOpen: true,
-        title: 'Pindahkan ke Trash?',
-        message: `Apakah Anda yakin ingin memindahkan item "${item.name}" (${item.id}) ke tempat sampah?`,
-        type: 'warning',
-        onConfirm: async () => {
-          const timestamp = new Date().toISOString();
-          const { error } = await supabase
-            .from('items')
-            .update({ deleted_at: timestamp })
-            .eq('id', item.id);
+      // Cek apakah akun ditangguhkan
+      if (roleData.is_suspended === true) {
+        toast.error(
+          (t) => (
+            <div>
+              <b className="text-red-700 font-bold text-sm">Akun Ditangguhkan!</b>
+              <p className="text-xs mt-1 text-slate-600">Anda tidak memiliki akses ke dalam sistem. Silakan hubungi Admin Gudang.</p>
+            </div>
+          ), 
+          { duration: 5000, icon: '⛔' }
+        );
+        setIsLoading(false);
+        return; 
+      }
 
-          if (error) throw error;
-          setItems(items.map(i => i.id === item.id ? { ...i, deleted_at: timestamp } : i));
-          toast.success(`Barang berhasil dipindahkan ke Trash.`);
-          setConfirmModal({ isOpen: false });
-        }
+      // 2. LOGIN KE SUPABASE MENGGUNAKAN EMAIL YANG DITEMUKAN
+      const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
+        email: roleData.email, 
+        password: form.password,
       });
 
-    } catch (error) {
-      console.error('Gagal arsip item:', error.message);
-      toast.error('Terjadi kesalahan saat memeriksa data riwayat.');
-    }
-  };
-
-  const handleRestore = async (id) => {
-    try {
-      const { error } = await supabase
-        .from('items')
-        .update({ deleted_at: null })
-        .eq('id', id);
-
-      if (error) throw error;
-      setItems(items.map(item => item.id === id ? { ...item, deleted_at: null } : item));
-      toast.success('Barang berhasil dipulihkan!');
-    } catch (error) {
-      console.error('Gagal memulihkan item:', error.message);
-      toast.error('Gagal memulihkan item!');
-    }
-  };
-
-  const handleHardDelete = async (item) => {
-    try {
-      const { count, error: checkError } = await supabase
-        .from('request_items')
-        .select('*', { count: 'exact', head: true })
-        .or(`kode_barang.eq.${item.id},nama_barang.ilike.${item.name}`);
-
-      if (checkError) throw checkError;
-
-      if (count && count > 0) {
-        toast.error(`TIDAK BISA DIHAPUS PERMANEN!\nBarang "${item.name}" sudah pernah diajukan.`, { duration: 5000 });
+      if (supabaseError) {
+        setError({ ...newError, general: "Password yang Anda masukkan salah." });
+        setIsLoading(false);
         return;
       }
 
-      setConfirmModal({
-        isOpen: true,
-        title: 'Hapus Permanen Barang?',
-        message: `PERINGATAN: Item "${item.name}" (${item.id}) akan dihapus secara PERMANEN dari database dan tidak dapat dikembalikan!`,
-        type: 'danger',
-        onConfirm: async () => {
-          const { error: deleteError } = await supabase
-            .from('items')
-            .delete()
-            .eq('id', item.id);
+      let userRole = "user"; 
+      if (roleData && roleData.role) {
+        userRole = roleData.role.toLowerCase(); 
+      }
 
-          if (deleteError) throw deleteError;
-          setItems(items.filter(i => i.id !== item.id));
-          toast.success(`Sukses menghapus permanen item ${item.id}.`);
-          setConfirmModal({ isOpen: false });
+      // 3. SIMPAN SESI DAN DATA PROFIL
+      if (data.session) {
+        localStorage.setItem("token", data.session.access_token);
+        localStorage.setItem("access_token", data.session.access_token);
+
+        if (form.remember) {
+          localStorage.setItem("rememberedName", inputIdentitas);
+        } else {
+          localStorage.removeItem("rememberedName");
         }
-      });
 
-    } catch (error) {
-      console.error('Gagal memeriksa riwayat / menghapus permanen:', error.message);
-      toast.error('Terjadi kesalahan saat memproses data.');
-    }
-  };
+        const profileInfo = {
+          email: roleData.email,
+          namaLengkap: roleData.nama_lengkap || roleData.email.split('@')[0],
+          nipPegawai: roleData.staff_id || "",
+          divisi: roleData.unit || "",
+          role: userRole,     
+          jabatan: roleData.jabatan || userRole,  
+          noTelepon: roleData.no_telepon || ""
+        };
+        localStorage.setItem("userProfile", JSON.stringify(profileInfo));
+      }
 
-  // 🔥 FUNGSI EXPORT KE EXCEL (LAPORAN STOK & BARANG KELUAR BULAN INI)
-  const exportToExcel = async () => {
-    const toastId = toast.loading('Menyiapkan laporan Excel...');
-    try {
-      // 1. Dapatkan tanggal awal dan akhir bulan ini
-      const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
-
-      // 2. Ambil data request barang yang disetujui (keluar) bulan ini
-      const { data: requestData, error: reqError } = await supabase
-        .from('request_items')
-        .select('kode_barang, nama_barang, qty, status, created_at, pemohon')
-        .eq('status', 'Disetujui')
-        .gte('created_at', startOfMonth)
-        .lte('created_at', endOfMonth);
-
-      if (reqError) throw reqError;
-
-      // 3. Format Sheet 1: Master Stok Barang Saat Ini
-      const stockData = processedItems.map(item => ({
-        'Kode Barang': item.id,
-        'Nama Barang': item.name,
-        'Kategori': item.category,
-        'Stok Fisik (Sistem)': item.stock,
-        'Tanggal Masuk': formatDate(item.date)
-      }));
-
-      // 4. Format Sheet 2: Log Barang Keluar Bulan Ini
-      const outgoingData = requestData.map(req => ({
-        'Tanggal Keluar': formatDate(req.created_at),
-        'Kode Barang': req.kode_barang || '-',
-        'Nama Barang': req.nama_barang,
-        'Jumlah Keluar': req.qty,
-        'Pemohon': req.pemohon || '-',
-        'Status': req.status
-      }));
-
-      // 5. Buat Workbook Excel
-      const wb = XLSX.utils.book_new();
-      
-      const wsStock = XLSX.utils.json_to_sheet(stockData);
-      XLSX.utils.book_append_sheet(wb, wsStock, "Master Stok");
-
-      if (outgoingData.length > 0) {
-        const wsOutgoing = XLSX.utils.json_to_sheet(outgoingData);
-        XLSX.utils.book_append_sheet(wb, wsOutgoing, "Barang Keluar Bulan Ini");
+      // 4. ARAHKAN KE DASHBOARD SESUAI ROLE
+      if (userRole === "admin" || userRole === "head unit") {
+        navigate("/admin");
+      } else if (userRole === "manager") {
+        navigate("/manager");
       } else {
-        const wsEmpty = XLSX.utils.json_to_sheet([{"Info": "Tidak ada barang keluar bulan ini"}]);
-        XLSX.utils.book_append_sheet(wb, wsEmpty, "Barang Keluar Bulan Ini");
+        navigate("/user");
       }
 
-      // 6. Simpan file
-      const monthName = now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-      XLSX.writeFile(wb, `Laporan_Stok_BSNetOps_${monthName.replace(' ', '_')}.xlsx`);
-      
-      toast.success('Laporan berhasil diunduh!', { id: toastId });
-    } catch (error) {
-      console.error('Error export excel:', error);
-      toast.error('Gagal membuat laporan Excel.', { id: toastId });
+    } catch (err) {
+      console.error("Terjadi kesalahan sistem saat login:", err);
+      setError({ ...newError, general: "Terjadi kesalahan koneksi ke server." });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
-  };
+  const handleForgot = async (e) => {
+    e.preventDefault();
 
-  const processedItems = items
-    .filter(item => (showTrash ? item.deleted_at !== null : item.deleted_at === null))
-    .filter(item => (categoryFilter === 'Semua' ? true : item.category === categoryFilter))
-    .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()) || item.id.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => {
-      if (sortOrder === 'asc') return a.name.localeCompare(b.name);
-      if (sortOrder === 'desc') return b.name.localeCompare(a.name);
-      return 0;
+    if (!forgotEmail) {
+      toast.error("Email wajib diisi");
+      return;
+    }
+
+    const toastId = toast.loading("Mengirim link..."); 
+
+    // Menggunakan origin web yang stabil untuk reset password
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      redirectTo: `https://bsnetops.pages.dev/`,
     });
 
-  return (
-    <div className="space-y-6 animate-in fade-in duration-300 relative">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          {showTrash && (
-            <button onClick={() => setShowTrash(false)} className="p-2 bg-white border border-zinc-200 rounded-xl shadow-md text-[#00664b] hover:bg-emerald-50 transition-all cursor-pointer">
-              <ArrowLeft size={18} />
-            </button>
-          )}
+    if (error) {
+      toast.error(`Gagal: ${error.message}`, { id: toastId });
+    } else {
+      toast.success(
+        (t) => (
           <div>
-            <h2 className="text-xl font-bold text-white">Manajemen Stok & Inventaris</h2>
-            <p className="text-xs text-white/80 mt-0.5">{showTrash ? 'Daftar arsip barang (Trash)' : 'Daftar logistik dan aset operasional'}</p>
+            <b className="text-[#00634b] font-bold text-sm">Link Terkirim!</b>
+            <p className="text-xs mt-1 text-slate-600">Silakan cek kotak masuk atau folder spam email Anda.</p>
           </div>
-        </div>
+        ), 
+        { id: toastId, duration: 5000, icon: '✉️' }
+      );
+      setShowForgot(false);
+      setForgotEmail("");
+    }
+  };
 
-        <div className="flex flex-wrap items-center gap-3">
-          {!showTrash && (
-            <button onClick={() => setShowTrash(true)} className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-sm font-semibold hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer group">
-              <Trash2 size={16} /> Arsip
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-slate-100 text-slate-900">
+
+      {/* BACKGROUND */}
+      <div
+        className="absolute inset-0 scale-105 bg-cover bg-center blur-sm"
+        style={{ backgroundImage: "url('./images/landingpage-bg.jpeg')" }}
+      />
+      <div className="absolute inset-0 bg-black/35" />
+
+      {/* LOGIN MODAL */}
+      {!showForgot && (
+        <section className="relative z-10 flex min-h-screen items-center justify-center px-6">
+          <div className="relative w-full max-w-[400px] rounded-2xl bg-white px-8 py-8 shadow-2xl animate-in zoom-in-95 duration-300">
+
+            {/* CLOSE */}
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="absolute right-5 top-5 cursor-pointer text-xl text-slate-400 transition hover:scale-110 hover:text-red-500"
+            >
+              <FaXmark />
             </button>
-          )}
-          
-          {/* 🔥 Tombol Baru untuk Laporan & Opname */}
-          {isAdmin && !showTrash && (
-            <>
-              <button 
-                onClick={exportToExcel} 
-                className="flex items-center gap-2 px-4 py-2.5 bg-white text-emerald-700 border border-emerald-200 rounded-xl text-sm font-semibold hover:bg-emerald-50 transition-all cursor-pointer shadow-sm"
-              >
-                <Download size={16} /> Laporan Excel
-              </button>
-              
-              <button 
-                onClick={() => setIsOpnameOpen(true)} 
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#f59e0b] text-white rounded-xl text-sm font-semibold shadow-md hover:bg-[#d97706] transition-all cursor-pointer"
-              >
-                <ClipboardCheck size={16} /> Opname
-              </button>
 
-              <button onClick={() => setIsAddOpen(true)} className="flex items-center gap-2 bg-[#00664b] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md hover:bg-[#00553e] transition-all cursor-pointer">
-                <Plus size={16} /> Tambah Item
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="flex bg-white p-4 rounded-xl shadow-md border border-zinc-200/80">
-        <div className="flex-1 relative flex items-center">
-          <Search size={18} className="absolute left-3 text-zinc-400" />
-          <input 
-            type="text" 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari berdasarkan kode atau nama barang..." 
-            className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-colors"
-          />
-        </div>
-      </div>
-
-      <div className="bg-white border border-zinc-200 rounded-xl shadow-md overflow-hidden">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-[#58a27d] text-white text-xs uppercase font-semibold">
-            <tr>
-              <th className="p-4">Kode</th>
-              <th className="p-4">Nama Barang</th>
-              <th className="p-4">Kategori</th>
-              <th className="p-4">Stok</th>
-              <th className="p-4">Tanggal Masuk</th>
-              {isAdmin && <th className="p-4 text-right">Aksi</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {loading ? (
-              <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
-                  Memuat data dari database...
-                </td>
-              </tr>
-            ) : processedItems.length === 0 ? (
-              <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
-                  {showTrash ? 'Tidak ada item di dalam Trash.' : 'Tidak ditemukan data item yang cocok.'}
-                </td>
-              </tr>
-            ) : (
-              processedItems.map((item) => (
-                <tr key={item.id} className="hover:bg-zinc-50/40">
-                  <td className="p-4 font-mono font-bold text-zinc-900">{item.id}</td>
-                  <td className="p-4 font-semibold text-zinc-900">{item.name}</td>
-                  <td className="p-4 text-zinc-600">{item.category}</td>
-                  <td className="p-4 font-bold">{item.stock} Unit</td>
-                  <td className="p-4 text-zinc-600">{formatDate(item.date)}</td>
-                  {isAdmin && (
-                    <td className="p-4 text-right space-x-2">
-                      {showTrash ? (
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => handleRestore(item.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer">
-                            <RefreshCw size={14} /> Restore
-                          </button>
-                          <button onClick={() => handleHardDelete(item)} className="p-1.5 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer">
-                            <XCircle size={14} /> Hapus Permanen
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <button onClick={() => handleEditClick(item)} className="p-1.5 text-zinc-500 hover:text-blue-600 cursor-pointer"><Edit3 size={16} /></button>
-                          <button onClick={() => handleSoftDelete(item)} className="p-1.5 text-zinc-500 hover:text-red-600 cursor-pointer"><Trash2 size={16} /></button>
-                        </>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {confirmModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 text-center space-y-3">
-              <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                <AlertTriangle size={24} />
-              </div>
-              <h3 className="text-lg font-bold text-zinc-900">{confirmModal.title}</h3>
-              <p className="text-xs text-zinc-500 leading-relaxed px-2">{confirmModal.message}</p>
+            {/* TITLE */}
+            <div className="mb-6 text-center">
+              <h1 className="text-2xl font-bold text-[#00634b]">
+                Selamat Datang!
+              </h1>
+              <p className="text-sm text-[#4a9b7c]">
+                Masuk untuk mengakses akun anda
+              </p>
             </div>
-            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-100 flex gap-3 justify-end">
-              <button 
-                onClick={() => setConfirmModal({ isOpen: false })} 
-                className="px-4 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-200/60 rounded-xl transition-colors cursor-pointer"
-              >
-                Batal
-              </button>
-              <button 
-                onClick={confirmModal.onConfirm} 
-                className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer ${
-                  confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#00664b] hover:bg-[#00553e]'
-                }`}
-              >
-                Ya, Lanjutkan
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* 🔥 Placeholder Modal Opname (Bisa kamu buat komponen terpisah nanti) */}
-      {isOpnameOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm">
-           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl p-6 relative">
-              <button onClick={() => setIsOpnameOpen(false)} className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 cursor-pointer">
-                <XCircle size={24} />
-              </button>
-              <h2 className="text-xl font-bold text-[#00664b] mb-4">Mulai Opname Stok</h2>
-              <p className="text-sm text-zinc-600 mb-6">Fitur ini memungkinkan Anda mencocokkan stok fisik di gudang dengan data di sistem.</p>
+            {/* FORM */}
+            <form onSubmit={handleLogin} className="space-y-4">
               
-              <div className="bg-amber-50 border border-amber-200 text-amber-700 p-4 rounded-xl text-sm font-medium">
-                 Tampilan form input stok aktual akan diletakkan di sini. Anda dapat membandingkan stok sistem vs stok fisik, lalu menyimpan penyesuaian (adjustment).
+              {error.general && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center text-sm font-semibold text-red-600">
+                  {error.general}
+                </div>
+              )}
+
+              {/* IDENTITAS: EMAIL / NAMA LENGKAP */}
+              <div>
+                <label className="mb-1 block text-sm font-semibold">
+                  Email / Nama Lengkap
+                </label>
+                <input
+                  type="text" 
+                  name="namaLengkap" 
+                  value={form.namaLengkap}
+                  onChange={handleChange}
+                  placeholder="Masukkan Email atau Nama Lengkap"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
+                />
+                {error.namaLengkap && (
+                  <p className="mt-1 text-xs text-red-500 font-medium">
+                    {error.namaLengkap}
+                  </p>
+                )}
               </div>
 
-              <div className="mt-6 flex justify-end">
-                <button onClick={() => setIsOpnameOpen(false)} className="px-4 py-2 bg-zinc-200 hover:bg-zinc-300 rounded-lg text-sm font-semibold text-zinc-700 cursor-pointer">
-                  Tutup
+              {/* PASSWORD */}
+              <div className="relative">
+                <label className="mb-1 block text-sm font-semibold">
+                  Password
+                </label>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={form.password}
+                  onChange={handleChange}
+                  placeholder="••••••••"
+                  className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-9 cursor-pointer text-slate-400 hover:text-[#00634b] active:scale-90 transition-all"
+                >
+                  {showPassword ? <FaEyeSlash /> : <FaEye />}
+                </button>
+                {error.password && (
+                  <p className="mt-1 text-xs text-red-500 font-medium">
+                    {error.password}
+                  </p>
+                )}
+              </div>
+
+              {/* REMEMBER + FORGOT */}
+              <div className="flex items-center justify-between text-xs pt-1">
+                <label className="flex cursor-pointer items-center gap-2 font-medium select-none text-slate-600 hover:text-slate-900 transition-colors">
+                  <input
+                    type="checkbox"
+                    name="remember"
+                    checked={form.remember}
+                    onChange={handleChange}
+                    className="cursor-pointer accent-[#00634b] w-4 h-4 rounded"
+                  />
+                  Ingat Saya
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowForgot(true)}
+                  className="cursor-pointer font-bold text-[#00634b] hover:underline"
+                >
+                  Lupa password?
                 </button>
               </div>
-           </div>
-        </div>
+
+              {/* LOGIN BUTTON */}
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full mt-2 cursor-pointer rounded-lg bg-[#00634b] py-3 text-sm font-bold text-white shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 active:scale-95 hover:bg-[#004d3a] disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                {isLoading ? "Memproses Data..." : "Log in"}
+              </button>
+
+            </form>
+
+            <p className="mt-6 text-center text-sm text-slate-500">
+            Belum punya akun?{" "}
+            <Link
+                to="/register"
+                className="font-bold text-[#00634b] hover:underline cursor-pointer"
+            >
+                Daftar Sekarang
+            </Link>
+            </p>
+
+          </div>
+        </section>
       )}
 
-      {isAddOpen && (
-        <TambahItem 
-          onClose={() => setIsAddOpen(false)} 
-          onSuccess={() => {
-            setIsAddOpen(false);
-            fetchItems(); 
-          }} 
-        />
+      {/* FORGOT PASSWORD MODAL */}
+      {showForgot && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm px-6 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="mb-4 flex items-center justify-between border-b pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-zinc-900">
+                  Reset Password
+                </h2>
+                <p className="text-[11px] text-zinc-500 mt-0.5">Kami akan mengirimkan link untuk memulihkan akunmu.</p>
+              </div>
+              <button
+                onClick={() => setShowForgot(false)}
+                className="cursor-pointer text-xl p-1.5 hover:bg-zinc-100 rounded-lg text-zinc-400 hover:text-red-500 transition-all"
+              >
+                <FaXmark />
+              </button>
+            </div>
+            <form onSubmit={handleForgot} className="space-y-4 mt-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">Email Terdaftar</label>
+                <input
+                  type="email"
+                  placeholder="contoh@bsn.go.id"
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  className="w-full rounded-lg bg-zinc-50 border border-zinc-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 focus:bg-white transition-all"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full cursor-pointer rounded-lg bg-[#00634b] py-2.5 text-sm font-bold text-white shadow-md hover:shadow-lg transition-all active:scale-95 hover:bg-[#004d3a]"
+              >
+                Kirim Link Reset
+              </button>
+            </form>
+          </div>
+        </div>
       )}
-      
-      {isEditOpen && (
-        <EditItem 
-          itemData={selectedItem} 
-          onClose={() => setIsEditOpen(false)} 
-          onSuccess={() => {
-            setIsEditOpen(false);
-            fetchItems(); 
-          }}
-        />
-      )}
-    </div>
+    </main>
   );
 }
