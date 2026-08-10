@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
 import { useNavigate, Link } from "react-router-dom"; 
-import { supabase } from "../../supabaseClient"; 
+import { supabase } from "../../../../supabaseClient";
 import toast from "react-hot-toast"; 
 
 export default function LoginPage() {
