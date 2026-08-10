@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit3, Trash2, Search, ArrowLeft, XCircle, AlertTriangle, RefreshCw, Download, ClipboardCheck } from 'lucide-react';
+import { Plus, Edit3, Trash2, Search, ArrowLeft, XCircle, AlertTriangle, RefreshCw, Download } from 'lucide-react';
 import TambahItem from './TambahItem';
 import EditItem from './EditItem';
 import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx'; // 🔥 Import library excel
+import * as XLSX from 'xlsx'; 
 
 export default function StokBarang({ role = 'admin' }) {
   const isAdmin = role === 'admin';
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [isOpnameOpen, setIsOpnameOpen] = useState(false); // State untuk Modal Opname
   const [selectedItem, setSelectedItem] = useState(null);
   
   const [items, setItems] = useState([]);
@@ -160,66 +159,69 @@ export default function StokBarang({ role = 'admin' }) {
     }
   };
 
-  // 🔥 FUNGSI EXPORT KE EXCEL (LAPORAN STOK & BARANG KELUAR BULAN INI)
-  const exportToExcel = async () => {
-    const toastId = toast.loading('Menyiapkan laporan Excel...');
+  // 🔥 FUNGSI EXPORT LAPORAN OPNAME (MUTASI STOK PER BARANG)
+  const exportLaporanOpname = async () => {
+    const toastId = toast.loading('Menghitung rekapitulasi stok...');
     try {
       // 1. Dapatkan tanggal awal dan akhir bulan ini
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-      // 2. Ambil data request barang yang disetujui (keluar) bulan ini
+      // 2. Ambil data barang yang disetujui (keluar) khusus di bulan ini saja
       const { data: requestData, error: reqError } = await supabase
         .from('request_items')
-        .select('kode_barang, nama_barang, qty, status, created_at, pemohon')
+        .select('kode_barang, qty')
         .eq('status', 'Disetujui')
         .gte('created_at', startOfMonth)
         .lte('created_at', endOfMonth);
 
       if (reqError) throw reqError;
 
-      // 3. Format Sheet 1: Master Stok Barang Saat Ini
-      const stockData = processedItems.map(item => ({
-        'Kode Barang': item.id,
-        'Nama Barang': item.name,
-        'Kategori': item.category,
-        'Stok Fisik (Sistem)': item.stock,
-        'Tanggal Masuk': formatDate(item.date)
-      }));
+      // 3. Gabungkan dan hitung data untuk setiap barang di gudang
+      const opnameData = processedItems.map(item => {
+        // Cari total barang ini yang keluar di bulan ini
+        const totalKeluarBulanIni = requestData
+          .filter(req => req.kode_barang === item.id)
+          .reduce((sum, current) => sum + (current.qty || 0), 0);
 
-      // 4. Format Sheet 2: Log Barang Keluar Bulan Ini
-      const outgoingData = requestData.map(req => ({
-        'Tanggal Keluar': formatDate(req.created_at),
-        'Kode Barang': req.kode_barang || '-',
-        'Nama Barang': req.nama_barang,
-        'Jumlah Keluar': req.qty,
-        'Pemohon': req.pemohon || '-',
-        'Status': req.status
-      }));
+        // Asumsi simpel: Stok awal = Sisa Stok Sekarang + Yang sudah keluar bulan ini
+        const stokAwal = item.stock + totalKeluarBulanIni;
 
-      // 5. Buat Workbook Excel
+        return {
+          'Kode Barang': item.id,
+          'Nama Barang': item.name,
+          'Kategori': item.category,
+          'Total Stok Awal (Masuk)': stokAwal,
+          'Barang Keluar (Bulan Ini)': totalKeluarBulanIni,
+          'Sisa Barang (Sekarang)': item.stock,
+        };
+      });
+
+      // 4. Buat File Excel
       const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(opnameData);
       
-      const wsStock = XLSX.utils.json_to_sheet(stockData);
-      XLSX.utils.book_append_sheet(wb, wsStock, "Master Stok");
+      // Mengatur lebar kolom agar rapi di Excel
+      ws['!cols'] = [
+        { wch: 15 }, // Kode
+        { wch: 30 }, // Nama
+        { wch: 20 }, // Kategori
+        { wch: 25 }, // Stok Awal
+        { wch: 25 }, // Barang Keluar
+        { wch: 25 }  // Sisa Barang
+      ];
 
-      if (outgoingData.length > 0) {
-        const wsOutgoing = XLSX.utils.json_to_sheet(outgoingData);
-        XLSX.utils.book_append_sheet(wb, wsOutgoing, "Barang Keluar Bulan Ini");
-      } else {
-        const wsEmpty = XLSX.utils.json_to_sheet([{"Info": "Tidak ada barang keluar bulan ini"}]);
-        XLSX.utils.book_append_sheet(wb, wsEmpty, "Barang Keluar Bulan Ini");
-      }
+      XLSX.utils.book_append_sheet(wb, ws, "Laporan Opname Stok");
 
-      // 6. Simpan file
+      // 5. Download File
       const monthName = now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
-      XLSX.writeFile(wb, `Laporan_Stok_BSNetOps_${monthName.replace(' ', '_')}.xlsx`);
+      XLSX.writeFile(wb, `Laporan_Opname_BSNetOps_${monthName.replace(' ', '_')}.xlsx`);
       
-      toast.success('Laporan berhasil diunduh!', { id: toastId });
+      toast.success('Laporan Opname berhasil diunduh!', { id: toastId });
     } catch (error) {
       console.error('Error export excel:', error);
-      toast.error('Gagal membuat laporan Excel.', { id: toastId });
+      toast.error('Gagal membuat laporan.', { id: toastId });
     }
   };
 
@@ -260,21 +262,14 @@ export default function StokBarang({ role = 'admin' }) {
             </button>
           )}
           
-          {/* 🔥 Tombol Baru untuk Laporan & Opname */}
+          {/* 🔥 TOMBOL LAPORAN OPNAME */}
           {isAdmin && !showTrash && (
             <>
               <button 
-                onClick={exportToExcel} 
-                className="flex items-center gap-2 px-4 py-2.5 bg-white text-emerald-700 border border-emerald-200 rounded-xl text-sm font-semibold hover:bg-emerald-50 transition-all cursor-pointer shadow-sm"
-              >
-                <Download size={16} /> Laporan Excel
-              </button>
-              
-              <button 
-                onClick={() => setIsOpnameOpen(true)} 
+                onClick={exportLaporanOpname} 
                 className="flex items-center gap-2 px-4 py-2.5 bg-[#f59e0b] text-white rounded-xl text-sm font-semibold shadow-md hover:bg-[#d97706] transition-all cursor-pointer"
               >
-                <ClipboardCheck size={16} /> Opname
+                <Download size={16} /> Laporan Opname (Excel)
               </button>
 
               <button onClick={() => setIsAddOpen(true)} className="flex items-center gap-2 bg-[#00664b] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md hover:bg-[#00553e] transition-all cursor-pointer">
@@ -384,29 +379,6 @@ export default function StokBarang({ role = 'admin' }) {
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* 🔥 Placeholder Modal Opname (Bisa kamu buat komponen terpisah nanti) */}
-      {isOpnameOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm">
-           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl p-6 relative">
-              <button onClick={() => setIsOpnameOpen(false)} className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 cursor-pointer">
-                <XCircle size={24} />
-              </button>
-              <h2 className="text-xl font-bold text-[#00664b] mb-4">Mulai Opname Stok</h2>
-              <p className="text-sm text-zinc-600 mb-6">Fitur ini memungkinkan Anda mencocokkan stok fisik di gudang dengan data di sistem.</p>
-              
-              <div className="bg-amber-50 border border-amber-200 text-amber-700 p-4 rounded-xl text-sm font-medium">
-                 Tampilan form input stok aktual akan diletakkan di sini. Anda dapat membandingkan stok sistem vs stok fisik, lalu menyimpan penyesuaian (adjustment).
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <button onClick={() => setIsOpnameOpen(false)} className="px-4 py-2 bg-zinc-200 hover:bg-zinc-300 rounded-lg text-sm font-semibold text-zinc-700 cursor-pointer">
-                  Tutup
-                </button>
-              </div>
-           </div>
         </div>
       )}
 
