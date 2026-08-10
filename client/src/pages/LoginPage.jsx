@@ -10,9 +10,9 @@ export default function LoginPage() {
   const [showForgot, setShowForgot] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // State form menggunakan namaLengkap
+  // State form dikembalikan menggunakan username (untuk menyimpan input email)
   const [form, setForm] = useState({
-    namaLengkap: "", 
+    username: "", 
     password: "",
     remember: false,
   });
@@ -20,16 +20,16 @@ export default function LoginPage() {
   const [forgotEmail, setForgotEmail] = useState("");
 
   const [error, setError] = useState({
-    namaLengkap: "", 
+    username: "", 
     password: "",
     general: "", 
   });
 
-  // Cek apakah ada nama yang tersimpan sebelumnya
+  // Cek apakah ada email yang tersimpan sebelumnya
   useEffect(() => {
-    const savedName = localStorage.getItem("rememberedName");
-    if(savedName){
-      setForm(prev => ({ ...prev, namaLengkap: savedName, remember: true }));
+    const savedEmail = localStorage.getItem("rememberedEmail");
+    if(savedEmail){
+      setForm(prev => ({ ...prev, username: savedEmail, remember: true }));
     }
   }, []);
 
@@ -50,34 +50,27 @@ export default function LoginPage() {
     e.preventDefault();
     if (isLoading) return; 
 
-    let newError = { namaLengkap: "", password: "", general: "" };
+    let newError = { username: "", password: "", general: "" };
 
-    if (!form.namaLengkap) newError.namaLengkap = "Masukkan Nama Lengkap";
+    if (!form.username) newError.username = "Masukkan email";
     if (!form.password) newError.password = "Masukkan password";
 
     setError(newError);
-    if (newError.namaLengkap || newError.password) return;
+    if (newError.username || newError.password) return;
 
     setIsLoading(true); 
-    const inputNama = form.namaLengkap.trim();
+    const inputEmail = form.username.trim().toLowerCase();
 
     try {
-      // 1. CARI EMAIL BERDASARKAN NAMA LENGKAP DI DATABASE
-      const { data: roleData, error: dbError } = await supabase
+      // 1. CEK DATA ROLE DAN STATUS PENANGGUHAN DI DATABASE
+      const { data: roleData } = await supabase
         .from('user_roles')
         .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon')
-        .ilike('nama_lengkap', inputNama) 
+        .eq('email', inputEmail)
         .maybeSingle(); 
 
-      // Jika nama lengkap tidak ditemukan atau tidak memiliki email
-      if (!roleData || !roleData.email) {
-        setError({ ...newError, general: "Nama Lengkap tidak terdaftar di sistem." });
-        setIsLoading(false);
-        return;
-      }
-
       // Cek apakah akun ditangguhkan
-      if (roleData.is_suspended === true) {
+      if (roleData && roleData.is_suspended === true) {
         toast.error(
           (t) => (
             <div>
@@ -91,14 +84,14 @@ export default function LoginPage() {
         return; 
       }
 
-      // 2. LOGIN KE SUPABASE MENGGUNAKAN EMAIL YANG DITEMUKAN
+      // 2. LOGIN LANGSUNG KE SUPABASE MENGGUNAKAN EMAIL
       const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
-        email: roleData.email, 
+        email: inputEmail, 
         password: form.password,
       });
 
       if (supabaseError) {
-        setError({ ...newError, general: "Password yang Anda masukkan salah." });
+        setError({ ...newError, general: "Email atau password yang Anda masukkan salah." });
         setIsLoading(false);
         return;
       }
@@ -114,19 +107,19 @@ export default function LoginPage() {
         localStorage.setItem("access_token", data.session.access_token);
 
         if (form.remember) {
-          localStorage.setItem("rememberedName", roleData.nama_lengkap || inputNama);
+          localStorage.setItem("rememberedEmail", inputEmail);
         } else {
-          localStorage.removeItem("rememberedName");
+          localStorage.removeItem("rememberedEmail");
         }
 
         const profileInfo = {
-          email: roleData.email,
-          namaLengkap: roleData.nama_lengkap || inputNama,
-          nipPegawai: roleData.staff_id || "",
-          divisi: roleData.unit || "",
+          email: inputEmail,
+          namaLengkap: roleData?.nama_lengkap || inputEmail.split('@')[0],
+          nipPegawai: roleData?.staff_id || "",
+          divisi: roleData?.unit || "",
           role: userRole,     
-          jabatan: roleData.jabatan || userRole,  
-          noTelepon: roleData.no_telepon || ""
+          jabatan: roleData?.jabatan || userRole,  
+          noTelepon: roleData?.no_telepon || ""
         };
         localStorage.setItem("userProfile", JSON.stringify(profileInfo));
       }
@@ -223,22 +216,22 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* NAMA LENGKAP */}
+              {/* EMAIL */}
               <div>
                 <label className="mb-1 block text-sm font-semibold">
-                  Nama Lengkap
+                  Email
                 </label>
                 <input
-                  type="text" 
-                  name="namaLengkap" 
-                  value={form.namaLengkap}
+                  type="email" 
+                  name="username" 
+                  value={form.username}
                   onChange={handleChange}
-                  placeholder="Masukkan Nama Lengkap Anda"
+                  placeholder="contoh@bsn.go.id"
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
                 />
-                {error.namaLengkap && (
+                {error.username && (
                   <p className="mt-1 text-xs text-red-500 font-medium">
-                    {error.namaLengkap}
+                    {error.username}
                   </p>
                 )}
               </div>
