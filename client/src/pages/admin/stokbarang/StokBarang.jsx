@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit3, Trash2, Search, Filter, ArrowUpDown, RefreshCw, ArrowLeft, XCircle, AlertTriangle, X } from 'lucide-react';
+import { Plus, Edit3, Trash2, Search, ArrowLeft, XCircle, AlertTriangle, RefreshCw, Download, ClipboardCheck } from 'lucide-react';
 import TambahItem from './TambahItem';
 import EditItem from './EditItem';
 import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx'; // 🔥 Import library excel
 
 export default function StokBarang({ role = 'admin' }) {
   const isAdmin = role === 'admin';
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isOpnameOpen, setIsOpnameOpen] = useState(false); // State untuk Modal Opname
   const [selectedItem, setSelectedItem] = useState(null);
   
   const [items, setItems] = useState([]);
@@ -19,25 +21,23 @@ export default function StokBarang({ role = 'admin' }) {
   const [categoryFilter, setCategoryFilter] = useState('Semua');
   const [sortOrder, setSortOrder] = useState('none');
 
-  // 🔥 State untuk Modal Konfirmasi Custom (Pengganti window.confirm)
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     title: '',
     message: '',
-    type: 'danger', // 'danger' atau 'warning'
+    type: 'danger', 
     onConfirm: () => {}
   });
 
   useEffect(() => {
     fetchItems();
 
-    // 🔥 Realtime: dengarkan perubahan di tabel items (stok masuk/keluar, tambah/hapus barang)
     const channel = supabase
       .channel('realtime-stok-barang')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'items' },
-        () => fetchItems(true) // background refresh, tanpa spinner loading
+        () => fetchItems(true)
       )
       .subscribe();
 
@@ -46,7 +46,6 @@ export default function StokBarang({ role = 'admin' }) {
     };
   }, []);
 
-  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
   const fetchItems = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
@@ -74,13 +73,14 @@ export default function StokBarang({ role = 'admin' }) {
     try {
       const { count, error: checkError } = await supabase
         .from('request_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('kode_barang', item.id);
 
       if (count && count > 0) {
         toast.error(`TIDAK BISA DIHAPUS!\nBarang "${item.name}" sudah pernah di-request.`, { duration: 3000 });
         return;
       }
 
-      // 🔥 Buka Modal Konfirmasi Custom (Soft Delete)
       setConfirmModal({
         isOpen: true,
         title: 'Pindahkan ke Trash?',
@@ -136,7 +136,6 @@ export default function StokBarang({ role = 'admin' }) {
         return;
       }
 
-      // 🔥 Buka Modal Konfirmasi Custom (Hard Delete)
       setConfirmModal({
         isOpen: true,
         title: 'Hapus Permanen Barang?',
@@ -158,6 +157,69 @@ export default function StokBarang({ role = 'admin' }) {
     } catch (error) {
       console.error('Gagal memeriksa riwayat / menghapus permanen:', error.message);
       toast.error('Terjadi kesalahan saat memproses data.');
+    }
+  };
+
+  // 🔥 FUNGSI EXPORT KE EXCEL (LAPORAN STOK & BARANG KELUAR BULAN INI)
+  const exportToExcel = async () => {
+    const toastId = toast.loading('Menyiapkan laporan Excel...');
+    try {
+      // 1. Dapatkan tanggal awal dan akhir bulan ini
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+      // 2. Ambil data request barang yang disetujui (keluar) bulan ini
+      const { data: requestData, error: reqError } = await supabase
+        .from('request_items')
+        .select('kode_barang, nama_barang, qty, status, created_at, pemohon')
+        .eq('status', 'Disetujui')
+        .gte('created_at', startOfMonth)
+        .lte('created_at', endOfMonth);
+
+      if (reqError) throw reqError;
+
+      // 3. Format Sheet 1: Master Stok Barang Saat Ini
+      const stockData = processedItems.map(item => ({
+        'Kode Barang': item.id,
+        'Nama Barang': item.name,
+        'Kategori': item.category,
+        'Stok Fisik (Sistem)': item.stock,
+        'Tanggal Masuk': formatDate(item.date)
+      }));
+
+      // 4. Format Sheet 2: Log Barang Keluar Bulan Ini
+      const outgoingData = requestData.map(req => ({
+        'Tanggal Keluar': formatDate(req.created_at),
+        'Kode Barang': req.kode_barang || '-',
+        'Nama Barang': req.nama_barang,
+        'Jumlah Keluar': req.qty,
+        'Pemohon': req.pemohon || '-',
+        'Status': req.status
+      }));
+
+      // 5. Buat Workbook Excel
+      const wb = XLSX.utils.book_new();
+      
+      const wsStock = XLSX.utils.json_to_sheet(stockData);
+      XLSX.utils.book_append_sheet(wb, wsStock, "Master Stok");
+
+      if (outgoingData.length > 0) {
+        const wsOutgoing = XLSX.utils.json_to_sheet(outgoingData);
+        XLSX.utils.book_append_sheet(wb, wsOutgoing, "Barang Keluar Bulan Ini");
+      } else {
+        const wsEmpty = XLSX.utils.json_to_sheet([{"Info": "Tidak ada barang keluar bulan ini"}]);
+        XLSX.utils.book_append_sheet(wb, wsEmpty, "Barang Keluar Bulan Ini");
+      }
+
+      // 6. Simpan file
+      const monthName = now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+      XLSX.writeFile(wb, `Laporan_Stok_BSNetOps_${monthName.replace(' ', '_')}.xlsx`);
+      
+      toast.success('Laporan berhasil diunduh!', { id: toastId });
+    } catch (error) {
+      console.error('Error export excel:', error);
+      toast.error('Gagal membuat laporan Excel.', { id: toastId });
     }
   };
 
@@ -191,16 +253,34 @@ export default function StokBarang({ role = 'admin' }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {!showTrash && (
             <button onClick={() => setShowTrash(true)} className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-sm font-semibold hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer group">
-              <Trash2 size={16} />
+              <Trash2 size={16} /> Arsip
             </button>
           )}
+          
+          {/* 🔥 Tombol Baru untuk Laporan & Opname */}
           {isAdmin && !showTrash && (
-            <button onClick={() => setIsAddOpen(true)} className="flex items-center gap-2 bg-[#00664b] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md hover:bg-[#00553e] transition-all cursor-pointer">
-              <Plus size={16} /> Tambah Item Baru
-            </button>
+            <>
+              <button 
+                onClick={exportToExcel} 
+                className="flex items-center gap-2 px-4 py-2.5 bg-white text-emerald-700 border border-emerald-200 rounded-xl text-sm font-semibold hover:bg-emerald-50 transition-all cursor-pointer shadow-sm"
+              >
+                <Download size={16} /> Laporan Excel
+              </button>
+              
+              <button 
+                onClick={() => setIsOpnameOpen(true)} 
+                className="flex items-center gap-2 px-4 py-2.5 bg-[#f59e0b] text-white rounded-xl text-sm font-semibold shadow-md hover:bg-[#d97706] transition-all cursor-pointer"
+              >
+                <ClipboardCheck size={16} /> Opname
+              </button>
+
+              <button onClick={() => setIsAddOpen(true)} className="flex items-center gap-2 bg-[#00664b] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md hover:bg-[#00553e] transition-all cursor-pointer">
+                <Plus size={16} /> Tambah Item
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -277,7 +357,6 @@ export default function StokBarang({ role = 'admin' }) {
         </table>
       </div>
 
-      {/* 🔥 MODAL KONFIRMASI CUSTOM (GAYA BSN MODERN) */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-200">
@@ -305,6 +384,29 @@ export default function StokBarang({ role = 'admin' }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 🔥 Placeholder Modal Opname (Bisa kamu buat komponen terpisah nanti) */}
+      {isOpnameOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm">
+           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl p-6 relative">
+              <button onClick={() => setIsOpnameOpen(false)} className="absolute top-4 right-4 text-zinc-400 hover:text-red-500 cursor-pointer">
+                <XCircle size={24} />
+              </button>
+              <h2 className="text-xl font-bold text-[#00664b] mb-4">Mulai Opname Stok</h2>
+              <p className="text-sm text-zinc-600 mb-6">Fitur ini memungkinkan Anda mencocokkan stok fisik di gudang dengan data di sistem.</p>
+              
+              <div className="bg-amber-50 border border-amber-200 text-amber-700 p-4 rounded-xl text-sm font-medium">
+                 Tampilan form input stok aktual akan diletakkan di sini. Anda dapat membandingkan stok sistem vs stok fisik, lalu menyimpan penyesuaian (adjustment).
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <button onClick={() => setIsOpnameOpen(false)} className="px-4 py-2 bg-zinc-200 hover:bg-zinc-300 rounded-lg text-sm font-semibold text-zinc-700 cursor-pointer">
+                  Tutup
+                </button>
+              </div>
+           </div>
         </div>
       )}
 
