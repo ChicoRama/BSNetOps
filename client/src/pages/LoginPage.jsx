@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
 import { useNavigate, Link } from "react-router-dom"; 
 import { supabase } from "../../supabaseClient"; 
-import toast from "react-hot-toast"; // 🔥 IMPORT WAJIB DITAMBAHKAN BIAR GAK FREEZE
+import toast from "react-hot-toast"; 
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -10,8 +10,9 @@ export default function LoginPage() {
   const [showForgot, setShowForgot] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // State form menggunakan namaLengkap
   const [form, setForm] = useState({
-    username: "", 
+    namaLengkap: "", 
     password: "",
     remember: false,
   });
@@ -19,16 +20,16 @@ export default function LoginPage() {
   const [forgotEmail, setForgotEmail] = useState("");
 
   const [error, setError] = useState({
-    username: "",
+    namaLengkap: "", 
     password: "",
     general: "", 
   });
 
-  // Cek apakah ada email yang tersimpan sebelumnya
+  // Cek apakah ada nama yang tersimpan sebelumnya
   useEffect(() => {
-    const savedEmail = localStorage.getItem("rememberedEmail");
-    if(savedEmail){
-      setForm(prev => ({ ...prev, username: savedEmail, remember: true }));
+    const savedName = localStorage.getItem("rememberedName");
+    if(savedName){
+      setForm(prev => ({ ...prev, namaLengkap: savedName, remember: true }));
     }
   }, []);
 
@@ -49,26 +50,34 @@ export default function LoginPage() {
     e.preventDefault();
     if (isLoading) return; 
 
-    let newError = { username: "", password: "", general: "" };
+    let newError = { namaLengkap: "", password: "", general: "" };
 
-    if (!form.username) newError.username = "Masukkan email";
+    if (!form.namaLengkap) newError.namaLengkap = "Masukkan Nama Lengkap";
     if (!form.password) newError.password = "Masukkan password";
 
     setError(newError);
-    if (newError.username || newError.password) return;
+    if (newError.namaLengkap || newError.password) return;
 
     setIsLoading(true); 
-    const inputEmail = form.username.toLowerCase();
+    const inputNama = form.namaLengkap.trim();
 
     try {
-      const { data: roleData } = await supabase
+      // 1. CARI EMAIL BERDASARKAN NAMA LENGKAP DI DATABASE
+      const { data: roleData, error: dbError } = await supabase
         .from('user_roles')
-        .select('role, is_suspended', 'username')
-        .eq('email', inputEmail)
+        .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon')
+        .ilike('nama_lengkap', inputNama) 
         .maybeSingle(); 
 
-      // 🔥 DESAIN NOTIFIKASI SUSPEND DIPERBAGUS
-      if (roleData && roleData.is_suspended === true) {
+      // Jika nama lengkap tidak ditemukan atau tidak memiliki email
+      if (!roleData || !roleData.email) {
+        setError({ ...newError, general: "Nama Lengkap tidak terdaftar di sistem." });
+        setIsLoading(false);
+        return;
+      }
+
+      // Cek apakah akun ditangguhkan
+      if (roleData.is_suspended === true) {
         toast.error(
           (t) => (
             <div>
@@ -82,13 +91,14 @@ export default function LoginPage() {
         return; 
       }
 
+      // 2. LOGIN KE SUPABASE MENGGUNAKAN EMAIL YANG DITEMUKAN
       const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
-        email: inputEmail, 
+        email: roleData.email, 
         password: form.password,
       });
 
       if (supabaseError) {
-        setError({ ...newError, general: "Email atau password salah" });
+        setError({ ...newError, general: "Password yang Anda masukkan salah." });
         setIsLoading(false);
         return;
       }
@@ -98,30 +108,31 @@ export default function LoginPage() {
         userRole = roleData.role.toLowerCase(); 
       }
 
+      // 3. SIMPAN SESI DAN DATA PROFIL
       if (data.session) {
         localStorage.setItem("token", data.session.access_token);
         localStorage.setItem("access_token", data.session.access_token);
 
-        // 🔥 FUNGSI INGATKAN SAYA (REMEMBER ME) DIPERBAIKI
         if (form.remember) {
-          localStorage.setItem("rememberedEmail", inputEmail);
+          localStorage.setItem("rememberedName", roleData.nama_lengkap || inputNama);
         } else {
-          localStorage.removeItem("rememberedEmail");
+          localStorage.removeItem("rememberedName");
         }
 
         const profileInfo = {
-          email: inputEmail,
-          namaLengkap: data.user?.user_metadata?.full_name || inputEmail.split('@')[0],
-          nipPegawai: "",
-          divisi: "",
+          email: roleData.email,
+          namaLengkap: roleData.nama_lengkap || inputNama,
+          nipPegawai: roleData.staff_id || "",
+          divisi: roleData.unit || "",
           role: userRole,     
-          jabatan: userRole,  
-          noTelepon: ""
+          jabatan: roleData.jabatan || userRole,  
+          noTelepon: roleData.no_telepon || ""
         };
         localStorage.setItem("userProfile", JSON.stringify(profileInfo));
       }
 
-      if (userRole === "admin") {
+      // 4. ARAHKAN KE DASHBOARD SESUAI ROLE
+      if (userRole === "admin" || userRole === "head unit") {
         navigate("/admin");
       } else if (userRole === "manager") {
         navigate("/manager");
@@ -145,16 +156,16 @@ export default function LoginPage() {
       return;
     }
 
-    const toastId = toast.loading("Mengirim link..."); // 🔥 Mencegah Bug Freeze karena toastId kosong
+    const toastId = toast.loading("Mengirim link..."); 
 
+    // Menggunakan origin web yang stabil untuk reset password
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `https://bsnetops.pages.dev/`,
     });
 
     if (error) {
       toast.error(`Gagal: ${error.message}`, { id: toastId });
     } else {
-      // 🔥 DESAIN NOTIFIKASI KIRIM EMAIL DIPERBAGUS
       toast.success(
         (t) => (
           <div>
@@ -212,22 +223,22 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* EMAIL */}
+              {/* NAMA LENGKAP */}
               <div>
                 <label className="mb-1 block text-sm font-semibold">
-                  Email
+                  Nama Lengkap
                 </label>
                 <input
-                  type="email" 
-                  name="username"
-                  value={form.username}
+                  type="text" 
+                  name="namaLengkap" 
+                  value={form.namaLengkap}
                   onChange={handleChange}
-                  placeholder="contoh@bsn.go.id"
+                  placeholder="Masukkan Nama Lengkap Anda"
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
                 />
-                {error.username && (
+                {error.namaLengkap && (
                   <p className="mt-1 text-xs text-red-500 font-medium">
-                    {error.username}
+                    {error.namaLengkap}
                   </p>
                 )}
               </div>
@@ -328,7 +339,7 @@ export default function LoginPage() {
                 <label className="block text-xs font-bold text-zinc-700 mb-1">Email Terdaftar</label>
                 <input
                   type="email"
-                  placeholder="admin@bsn.go.id"
+                  placeholder="contoh@bsn.go.id"
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
                   className="w-full rounded-lg bg-zinc-50 border border-zinc-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 focus:bg-white transition-all"
