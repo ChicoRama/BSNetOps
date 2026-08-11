@@ -1,24 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Clock, CheckCircle2, Activity, Package, Hash, Download, ArrowDownRight, ArrowUpRight, MapPin } from 'lucide-react';
+import { Search, Clock, CheckCircle2, Package, Hash, Download, Calendar, ArrowDownRight, ArrowUpRight, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../../../supabaseClient';
+import toast from 'react-hot-toast';
 
 export default function LogAktifitas() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('Semua');
+  
+  // 🔥 Default awal diset 'Semua Waktu' agar kosong/tidak langsung memfilter ke bulan tertentu
+  const [typeFilter, setTypeFilter] = useState('Semua Transaksi');
+  const [statusFilter, setStatusFilter] = useState('Semua Status');
+  const [periodMode, setPeriodMode] = useState('Semua Waktu'); // 'Semua Waktu', 'Berdasarkan Bulan', 'Berdasarkan Tahun'
+  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedYear, setSelectedYear] = useState('');
 
   useEffect(() => {
     fetchLogs();
 
-    // 🔥 Realtime: dengarkan perubahan di tabel activity_logs
     const channel = supabase
       .channel('realtime-activity-logs')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'activity_logs' },
-        () => fetchLogs(true) // background refresh, tanpa spinner loading
+        () => fetchLogs(true) 
       )
       .subscribe();
 
@@ -27,11 +33,9 @@ export default function LogAktifitas() {
     };
   }, []);
 
-  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
   const fetchLogs = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
-      // 1. Ambil data dari tabel activity_logs
       const { data: logData, error: logError } = await supabase
         .from('activity_logs')
         .select('*')
@@ -39,7 +43,6 @@ export default function LogAktifitas() {
 
       if (logError) throw logError;
 
-      // 🔥 2. Ambil data dari tabel requests untuk mendapatkan info Unit Cabang yang akurat
       const { data: reqData } = await supabase
         .from('requests')
         .select('id, unit');
@@ -49,7 +52,6 @@ export default function LogAktifitas() {
           const logType = (item.type || '').trim();
           const normalizedType = logType === 'Pengeluaran' ? 'Keluar' : logType;
           
-          // 🔥 3. Cari Unit Cabang berdasarkan ID Transaksi
           let targetUnit = '';
           if (normalizedType === 'Keluar') {
             const matchedRequest = reqData?.find(r => r.id === item.transaction_id);
@@ -61,10 +63,11 @@ export default function LogAktifitas() {
             requester: item.requester,
             itemName: item.item_name,
             qty: item.qty,
-            date: item.date || new Date(item.created_at).toLocaleDateString('id-ID'),
-            status: item.status,
+            dateRaw: item.created_at ? new Date(item.created_at) : new Date(),
+            date: item.date || new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+            status: item.status || 'Approved',
             type: normalizedType,
-            unit: targetUnit // Simpan data unit ke dalam state
+            unit: targetUnit 
           };
         });
         setHistory(formatted);
@@ -76,17 +79,7 @@ export default function LogAktifitas() {
     }
   };
 
-  const filteredHistory = history
-    .filter(item => (typeFilter === 'Semua' ? true : item.type === typeFilter))
-    .filter(item =>
-      item.requester.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.itemName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.unit && item.unit.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-
   const handleExport = () => {
-    // Mempercantik data sebelum diexport ke Excel agar ada kolom Unit Tujuan
     const exportData = filteredHistory.map(item => ({
       "ID Transaksi": item.id,
       "Pemohon/Aktor": item.requester,
@@ -102,16 +95,61 @@ export default function LogAktifitas() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Logistik");
     XLSX.writeFile(workbook, "Laporan_Activity_Log_BSN.xlsx");
+    toast.success("Laporan berhasil di-export!");
   };
+
+  // 🔥 Filter Logika dengan opsi 'Semua Waktu'
+  const filteredHistory = history.filter(item => {
+    // 1. Filter Jenis Transaksi
+    if (typeFilter !== 'Semua Transaksi') {
+      if (typeFilter === 'Masuk' && item.type !== 'Masuk') return false;
+      if (typeFilter === 'Keluar' && item.type !== 'Keluar') return false;
+    }
+
+    // 2. Filter Status
+    if (statusFilter !== 'Semua Status') {
+      if (item.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+    }
+
+    // 3. Filter Periode
+    if (periodMode === 'Berdasarkan Bulan') {
+      if (selectedMonth) {
+        const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+        const itemMonthName = monthNames[item.dateRaw.getMonth()];
+        if (itemMonthName !== selectedMonth) return false;
+      }
+      if (selectedYear) {
+        const itemYearStr = item.dateRaw.getFullYear().toString();
+        if (itemYearStr !== selectedYear) return false;
+      }
+    } else if (periodMode === 'Berdasarkan Tahun') {
+      if (selectedYear) {
+        const itemYearStr = item.dateRaw.getFullYear().toString();
+        if (itemYearStr !== selectedYear) return false;
+      }
+    }
+    // Jika 'Semua Waktu', lewati filter bulan/tahun (tampilkan semua data)
+
+    // 4. Filter Pencarian Teks
+    const query = searchQuery.toLowerCase();
+    const matchSearch = 
+      item.requester.toLowerCase().includes(query) ||
+      item.itemName.toLowerCase().includes(query) ||
+      item.id.toLowerCase().includes(query) ||
+      (item.unit && item.unit.toLowerCase().includes(query));
+
+    return matchSearch;
+  });
+
+  const bulanList = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const tahunList = ["2024", "2025", "2026", "2027"];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div>
-            <h2 className="text-xl font-bold text-white">Activity Log & Laporan</h2>
-            <p className="text-xs text-white/80 mt-0.5">Arsip riwayat transaksi barang masuk dan keluar gudang</p>
-          </div>
+        <div>
+          <h2 className="text-xl font-bold text-white">Activity Log & Laporan</h2>
+          <p className="text-xs text-white/80 mt-0.5">Pantau arus barang masuk/keluar dan rekapitulasi data logistik BSN</p>
         </div>
 
         <button 
@@ -122,26 +160,90 @@ export default function LogAktifitas() {
         </button>
       </div>
 
-      <div className="bg-white p-4 rounded-xl shadow-md border border-zinc-200/80 flex gap-4">
-        <div className="flex-1 relative flex items-center">
-          <Search size={18} className="absolute left-3 text-zinc-400" />
-          <input 
-            type="text" 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari ID, pemohon, nama barang, atau unit cabang..." 
-            className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]"
-          />
+      {/* FILTER BOX */}
+      <div className="bg-white p-4 rounded-xl shadow-md border border-zinc-200/80 space-y-3">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex-1 relative flex items-center">
+            <Search size={18} className="absolute left-3 text-zinc-400" />
+            <input 
+              type="text" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari berdasarkan kode atau nama barang..." 
+              className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select 
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-2 cursor-pointer font-medium text-sm focus:outline-none focus:border-[#00664b]"
+            >
+              <option value="Semua Transaksi">Semua Transaksi</option>
+              <option value="Masuk">Masuk</option>
+              <option value="Keluar">Keluar</option>
+            </select>
+
+            <select 
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-2 cursor-pointer font-medium text-sm focus:outline-none focus:border-[#00664b]"
+            >
+              <option value="Semua Status">Semua Status</option>
+              <option value="Approved">Approved</option>
+              <option value="Pending">Pending</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
         </div>
-        <select 
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="bg-zinc-50 border border-zinc-200 text-sm text-zinc-700 rounded-lg px-3 py-2 cursor-pointer font-medium"
-        >
-          <option value="Semua">Semua Transaksi</option>
-          <option value="Masuk">Barang Masuk</option>
-          <option value="Keluar">Barang Keluar</option>
-        </select>
+
+        {/* Baris Filter Periode (Default: Semua Waktu) */}
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-zinc-100 text-xs text-zinc-600">
+          <span className="font-semibold flex items-center gap-1">
+            <Calendar size={14} className="text-[#00664b]" /> Filter periode:
+          </span>
+          <select 
+            value={periodMode}
+            onChange={(e) => {
+              setPeriodMode(e.target.value);
+              setSelectedMonth(''); // Reset bulan saat mode periode diubah
+              setSelectedYear('');  // Reset tahun saat mode periode diubah
+            }}
+            className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-1.5 font-medium cursor-pointer focus:outline-none focus:border-[#00664b]"
+          >
+            <option value="Semua Waktu">Semua Waktu</option>
+            <option value="Berdasarkan Bulan">Berdasarkan Bulan</option>
+            <option value="Berdasarkan Tahun">Berdasarkan Tahun</option>
+          </select>
+
+          {/* Muncul Dropdown Bulan jika 'Berdasarkan Bulan' dipilih */}
+          {periodMode === 'Berdasarkan Bulan' && (
+            <select 
+              value={selectedMonth}
+              onChange={(e) => {
+                setSelectedMonth(e.target.value);
+                if (!selectedYear) setSelectedYear('2026'); // Auto set tahun default kalau belum dipilih
+              }}
+              className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-1.5 font-medium cursor-pointer focus:outline-none focus:border-[#00664b]"
+            >
+              <option value="" disabled>Pilih Bulan...</option>
+              {bulanList.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          )}
+
+          {/* Muncul Kolom Tahun HANYA JIKA Bulan sudah dipilih ATAU Mode 'Berdasarkan Tahun' aktif */}
+          {( (periodMode === 'Berdasarkan Bulan' && selectedMonth !== '') || periodMode === 'Berdasarkan Tahun' ) && (
+            <select 
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-1.5 font-medium cursor-pointer animate-in fade-in duration-200 focus:outline-none focus:border-[#00664b]"
+            >
+              <option value="" disabled>Pilih Tahun...</option>
+              {tahunList.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -150,7 +252,7 @@ export default function LogAktifitas() {
         </div>
       ) : filteredHistory.length === 0 ? (
         <div className="p-12 text-center text-xs text-zinc-400 bg-white rounded-xl shadow-sm border border-zinc-200">
-          Belum ada riwayat aktivitas tercatat di database.
+          Tidak ada riwayat aktivitas yang cocok dengan filter.
         </div>
       ) : (
         filteredHistory.map((item, idx) => (
@@ -165,13 +267,12 @@ export default function LogAktifitas() {
               <div className="flex flex-col sm:flex-row justify-between gap-4">
                 <div className="space-y-1">
                   
-                  {/* 🔥 PERUBAHAN KALIMAT DINAMIS MENGGUNAKAN DATA UNIT */}
                   <p className="text-sm text-zinc-700 leading-relaxed">
                     <span className="font-bold text-zinc-900">{item.requester}</span> 
                     {item.type === 'Masuk' ? (
-                      ' menambahkan pasokan barang ke inventaris gudang pusat berupa '
+                      ' mendaftarkan barang masuk/restock ke dalam inventaris berupa '
                     ) : (
-                      <> melakukan request barang <span className="font-bold text-zinc-900 underline decoration-zinc-300 underline-offset-2"></span> berupa </>
+                      <> mengajukan permohonan peminjaman inventaris untuk dikirim ke <span className="font-bold text-zinc-900 underline decoration-zinc-300 underline-offset-2">{item.unit}</span> berupa </>
                     )}
                     <span className="font-semibold text-[#00664b]">{item.qty} Unit {item.itemName}</span>.
                   </p>
@@ -189,7 +290,10 @@ export default function LogAktifitas() {
                   <span className={`px-3 py-1.5 rounded-md text-xs font-bold border ${item.type === 'Masuk' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                     <Package size={14} className="inline mr-1" /> {item.type}
                   </span>
-                  <span className="px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className={`px-3 py-1.5 rounded-md text-xs font-bold ${
+                    item.status.toLowerCase() === 'approved' || item.status.toLowerCase() === 'selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    item.status.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>
                     <CheckCircle2 size={14} className="inline mr-1" /> {item.status}
                   </span>
                 </div>
