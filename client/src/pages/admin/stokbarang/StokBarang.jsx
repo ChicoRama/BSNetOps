@@ -164,16 +164,39 @@ export default function StokBarang({ role = 'admin' }) {
     }
   };
 
-  // 🔥 FUNGSI EXPORT LAPORAN OPNAME (BERDASARKAN BULAN PILIHAN)
+  // 🔥 FUNGSI EXPORT LAPORAN OPNAME (OTOMATIS CEK BARANG KOSONG)
   const exportLaporanOpname = async () => {
     setIsExportModalOpen(false); // Tutup modal saat tombol diklik
-    const toastId = toast.loading('Menghitung rekapitulasi stok...');
+    const toastId = toast.loading('Menyiapkan rekapitulasi stok...');
     try {
       // 1. Tentukan rentang waktu berdasarkan pilihan user
       const startOfMonth = new Date(exportYear, exportMonth, 1).toISOString();
-      const endOfMonth = new Date(exportYear, exportMonth + 1, 0, 23, 59, 59).toISOString();
+      const endOfMonth = new Date(exportYear, exportMonth + 1, 0, 23, 59, 59, 999).toISOString();
+      const namaBulanPilih = new Date(exportYear, exportMonth).toLocaleString('id-ID', { month: 'long', year: 'numeric' });
 
-      // 2. Ambil data dengan JOIN ke tabel requests
+      // 2. FILTER BARANG: Cuma ambil barang yang "created_at"-nya sebelum atau sama dengan akhir bulan pilihan.
+      // Kalau barangnya baru di-input di bulan Oktober, dia GAK AKAN MUNCUL di laporan bulan September.
+      const validItems = items.filter(item => {
+        if (item.deleted_at !== null) return false; // Jangan hitung yg udah di trash
+        return new Date(item.created_at) <= new Date(endOfMonth);
+      });
+
+      // 3. JIKA KOSONG MELOMPONG (Gak ada barang sama sekali di bulan tsb)
+      if (validItems.length === 0) {
+        const wb = XLSX.utils.book_new();
+        // Bikin sheet kosong cuma ada judul kolomnya doang
+        const ws = XLSX.utils.json_to_sheet([]);
+        XLSX.utils.sheet_add_aoa(ws, [["No", "Kode Barang", "Nama Barang", "Kategori", "Stok Awal Bulan", "Total Keluar", "Stok Akhir"]]);
+        ws['!cols'] = [{ wch: 5 }, { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+        
+        XLSX.utils.book_append_sheet(wb, ws, `Rekap ${namaBulanPilih}`);
+        XLSX.writeFile(wb, `Laporan_Opname_BSNetOps_${namaBulanPilih.replace(' ', '_')}.xlsx`);
+        
+        toast.success(`Data kosong di ${namaBulanPilih}. Laporan kosong berhasil diunduh.`, { id: toastId });
+        return; // Stop di sini, gak usah proses ke database request
+      }
+
+      // 4. JIKA ADA BARANG, LANJUT CEK REQUEST BARANG KELUAR
       const { data: requestData, error: reqError } = await supabase
         .from('request_items')
         .select(`
@@ -193,8 +216,8 @@ export default function StokBarang({ role = 'admin' }) {
 
       const validRequestData = requestData || [];
 
-      // 3. Gabungkan data
-      const opnameData = processedItems.map((item, index) => {
+      // 5. Gabungkan data
+      const opnameData = validItems.map((item, index) => {
         const totalKeluarBulanTersebut = validRequestData
           .filter(req => req.kode_barang === item.id)
           .reduce((sum, current) => {
@@ -202,8 +225,8 @@ export default function StokBarang({ role = 'admin' }) {
              return sum + Number(qtyKeluar);
           }, 0);
 
-        // Menghitung stok awal (Asumsi: Stok Awal = Sisa Stok Sekarang + Yang Sudah Keluar Bulan Tersebut)
-        const stokAwal = Number(item.stock) + totalKeluarBulanTersebut;
+        const stokSekarang = Number(item.stock);
+        const stokAwal = stokSekarang + totalKeluarBulanTersebut;
 
         return {
           'No': index + 1,
@@ -212,16 +235,16 @@ export default function StokBarang({ role = 'admin' }) {
           'Kategori': item.category,
           'Stok Awal Bulan': stokAwal,
           'Total Keluar': totalKeluarBulanTersebut,
-          'Stok Akhir': item.stock,
+          'Stok Akhir': stokSekarang,
         };
       });
 
-      // 4. Pastikan library XLSX siap
+      // 6. Pastikan library XLSX siap
       if (typeof XLSX === 'undefined') {
         throw new Error("Library XLSX belum terinstall. Jalankan: npm install xlsx");
       }
 
-      // 5. Buat File Excel
+      // 7. Buat File Excel
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(opnameData);
       
@@ -235,14 +258,10 @@ export default function StokBarang({ role = 'admin' }) {
         { wch: 20 }  // Stok Akhir
       ];
 
-      // Nama sheet memuat info bulan
-      const namaBulanPilih = new Date(exportYear, exportMonth).toLocaleString('id-ID', { month: 'long', year: 'numeric' });
       XLSX.utils.book_append_sheet(wb, ws, `Rekap ${namaBulanPilih}`);
-
-      // 6. Download File Excel
       XLSX.writeFile(wb, `Laporan_Opname_BSNetOps_${namaBulanPilih.replace(' ', '_')}.xlsx`);
       
-      toast.success('Laporan Opname berhasil diunduh!', { id: toastId });
+      toast.success(`Laporan Opname ${namaBulanPilih} berhasil diunduh!`, { id: toastId });
     } catch (error) {
       console.error('Error detail saat export excel:', error);
       toast.error(`Gagal: ${error.message}`, { id: toastId, duration: 6000 });
@@ -264,15 +283,19 @@ export default function StokBarang({ role = 'admin' }) {
       return 0;
     });
 
-  // Array nama bulan untuk dropdown
+  // Array nama bulan untuk dropdown (Bebas tanpa filter)
   const bulanList = [
     "Januari", "Februari", "Maret", "April", "Mei", "Juni", 
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
   ];
   
-  // Menghasilkan daftar tahun (misal: 3 tahun ke belakang sampai tahun ini)
+  // Array tahun (Dari tahun pembuatan web 2026 sampai tahun saat ini)
   const currentYear = new Date().getFullYear();
-  const tahunList = Array.from({length: 4}, (_, i) => currentYear - i);
+  const tahunMulaiAplikasi = 2026;
+  const tahunList = [];
+  for (let y = currentYear; y >= tahunMulaiAplikasi; y--) {
+    tahunList.push(y);
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 relative">
