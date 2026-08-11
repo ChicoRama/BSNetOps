@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Check, X, AlertCircle, X as CloseIcon, CheckSquare, MoreVertical, Download } from 'lucide-react';
+import { Search, Check, X, AlertCircle, X as CloseIcon, CheckSquare, MoreVertical, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import TemplateDokumenA4 from '../../user/permintaan/TemplateDokumenA4'; 
 import { supabase } from '../../../../supabaseClient'; 
@@ -16,6 +16,10 @@ export default function ApprovalRequest() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('Semua Prioritas');
   const [selectedRows, setSelectedRows] = useState([]);
+
+  // 🔥 State untuk Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
@@ -121,9 +125,11 @@ export default function ApprovalRequest() {
     }
   };
 
+  // 🔥 Reset halaman ke-1 jika filter berubah
   useEffect(() => {
+    setCurrentPage(1);
     setSelectedRows([]);
-  }, [activeTab]);
+  }, [activeTab, searchQuery, selectedPriority]);
 
   const filteredRequests = requests.filter(r => {
     const matchTab = activeTab === 'Semua' ? true : r.status?.toLowerCase() === activeTab.toLowerCase();
@@ -136,9 +142,15 @@ export default function ApprovalRequest() {
     return matchTab && matchPriority && matchSearch;
   });
 
+  // 🔥 Logika Pagination (Pembagian 5 Item per halaman)
+  const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
+
+  // Select all hanya menyeleksi data yang ada di halaman saat ini (Current Page)
   const selectableRequests = activeTab === 'Semua' 
-    ? filteredRequests.filter(r => r.status?.toLowerCase() === 'menunggu manager')
-    : filteredRequests;
+    ? paginatedRequests.filter(r => r.status?.toLowerCase() === 'menunggu manager')
+    : paginatedRequests;
 
   const handleSelectRow = (e, id) => {
     e.stopPropagation(); 
@@ -316,7 +328,6 @@ export default function ApprovalRequest() {
                 activeTab === status ? 'border-white font-bold' : 'border-transparent opacity-75'
               }`}
             >
-              {/* 🔥 Teks Menunggu ACC diubah jadi Menunggu Persetujuan */}
               <span>{status === 'Menunggu Manager' ? 'Menunggu Persetujuan' : status}</span>
               <span className="bg-[#00664b] text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
                 {status === 'Semua' 
@@ -380,8 +391,8 @@ export default function ApprovalRequest() {
         </div>
 
         {/* Tabel Request */}
-        <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+          <div className="overflow-x-auto flex-1">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-zinc-100 text-[11px] font-bold text-white uppercase bg-[#58a27d]">
@@ -411,7 +422,7 @@ export default function ApprovalRequest() {
                     </td>
                   </tr>
                 ) : (
-                  filteredRequests.map((item) => (
+                  paginatedRequests.map((item) => (
                     <tr 
                       key={item.id}
                       onClick={() => handleOpenModal(item.id)}
@@ -467,7 +478,7 @@ export default function ApprovalRequest() {
                     </tr>
                   ))
                 )}
-                {!loading && filteredRequests.length === 0 && (
+                {!loading && paginatedRequests.length === 0 && (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-zinc-400 font-medium text-xs">
                       Tidak ada data permintaan yang sesuai.
@@ -477,6 +488,34 @@ export default function ApprovalRequest() {
               </tbody>
             </table>
           </div>
+
+          {/* 🔥 PAGINATION CONTROLS */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-100 bg-zinc-50/50">
+              <span className="text-xs text-zinc-500 font-medium">
+                Menampilkan <span className="font-bold text-zinc-900">{startIndex + 1}</span> - <span className="font-bold text-zinc-900">{Math.min(startIndex + itemsPerPage, filteredRequests.length)}</span> dari <span className="font-bold text-zinc-900">{filteredRequests.length}</span> laporan
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs font-bold text-zinc-700 min-w-[80px] text-center">
+                  Hal {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

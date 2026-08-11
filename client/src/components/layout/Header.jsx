@@ -1,25 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Menu, Bell, LogOut, ChevronDown, CheckCircle2, XCircle, PackagePlus, Clock, TriangleAlert, X } from 'lucide-react';
+import { Menu, Bell, LogOut, ChevronDown, CheckCircle2, XCircle, PackagePlus, TriangleAlert, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../supabaseClient'; 
 
-// Helper untuk format waktu (contoh: "5 menit lalu")
-const formatTimeAgo = (dateString) => {
+// 🔥 Format waktu disamakan persis dengan screenshot (contoh: "8 aug, 17.51")
+const formatNotifDate = (dateString) => {
   if (!dateString) return '';
   const date = new Date(dateString);
-  const now = new Date();
-  const diffInSeconds = Math.floor((now - date) / 1000);
-  
-  if (diffInSeconds < 60) return 'Baru saja';
-  const diffInMinutes = Math.floor(diffInSeconds / 60);
-  if (diffInMinutes < 60) return `${diffInMinutes} mnt lalu`;
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) return `${diffInHours} jam lalu`;
-  const diffInDays = Math.floor(diffInHours / 24);
-  return `${diffInDays} hr lalu`;
+  const day = date.getDate();
+  const month = date.toLocaleString('en-US', { month: 'short' }).toLowerCase(); 
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${day} ${month}, ${hours}.${minutes}`;
 };
 
-export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
+export default function Header({ isOpen, setIsOpen, role = 'admin' }) {
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -29,12 +24,6 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
 
   const [notifications, setNotifications] = useState([]);
   const [userProfile, setUserProfile] = useState({ name: 'User', email: '', avatar: null });
-
-  // State dan Ref untuk fitur Swipe/Hover to Delete
-  const [swipedId, setSwipedId] = useState(null);
-  const [showDeleteId, setShowDeleteId] = useState(null);
-  const touchStartX = useRef(0);
-  const hoverTimer = useRef(null);
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
@@ -48,25 +37,16 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
     document.addEventListener('mousedown', handleClickOutside);
     window.addEventListener('profileUpdated', fetchUserDataAndNotifs);
 
-    // 🔥 Realtime: notifikasi baru & perubahan stok (untuk alert stok menipis) langsung muncul
+    // 🔥 Realtime Listener
     const channel = supabase
       .channel('realtime-header-notifications')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'notifications' },
-        () => fetchUserDataAndNotifs()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'items' },
-        () => fetchUserDataAndNotifs() // agar alert "Stok Menipis" ikut realtime
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => fetchUserDataAndNotifs())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, () => fetchUserDataAndNotifs())
       .subscribe();
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       window.removeEventListener('profileUpdated', fetchUserDataAndNotifs);
-      if (hoverTimer.current) clearTimeout(hoverTimer.current); // Bersihkan timer saat komponen ditutup
       supabase.removeChannel(channel);
     };
   }, []);
@@ -92,20 +72,13 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
         });
       }
 
-      // AUTO-DELETE NOTIFIKASI YANG >= 1 HARI (24 JAM)
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      await supabase
-        .from('notifications')
-        .delete()
-        .lte('created_at', twentyFourHoursAgo)
-        .eq('user_email', email);
-
+      // 🔥 Fetch notifikasi tanpa auto-delete 24 jam
       const { data: notifData, error: notifError } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_email', email)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(50); // Menampilkan maksimal 50 riwayat notifikasi
 
       let allNotifs = notifData && !notifError ? notifData : [];
 
@@ -116,13 +89,13 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
           .is('deleted_at', null);
 
         if (itemsData && !itemsError) {
-          const criticalItems = itemsData.filter(item => (parseInt(item.stock) || 0) <= 7);
+          const criticalItems = itemsData.filter(item => (parseInt(item.stock) || 0) < 5); // Standar aman < 5 sesuai screenshot
           
           if (criticalItems.length > 0) {
             const stockAlertNotifs = criticalItems.map(item => ({
               id: `system-alert-stock-${item.id}`,
               title: 'Peringatan Stok Menipis!',
-              message: `Stok ${item.name} sisa ${item.stock} unit. Segera lakukan restock.`,
+              message: `${item.name} kurang dari standar aman (<5)\nStok saat ini tersisa ${item.stock}`,
               type: 'alert',
               is_read: false, 
               created_at: new Date().toISOString()
@@ -140,50 +113,14 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
     }
   };
 
-  // --- HANDLER UNTUK HOVER (PC) DENGAN JEDA 3 DETIK ---
-  const handleMouseEnter = (id) => {
-    // Mulai hitung mundur 3000ms (3 detik)
-    hoverTimer.current = setTimeout(() => {
-      setShowDeleteId(id);
-    }, 1000); 
-  };
-
-  const handleMouseLeave = () => {
-    // Batalkan timer jika mouse pergi sebelum 3 detik
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    setShowDeleteId(null);
-  };
-
-  // --- HANDLER UNTUK TOUCH/SWIPE (HP) ---
-  const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-    if (hoverTimer.current) clearTimeout(hoverTimer.current); // Matikan efek hover kalau user pakai touch
-  };
-
-  const handleTouchEnd = (e, id) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const distance = touchStartX.current - touchEndX;
-    
-    if (distance > 40) { // Geser ke kiri
-      setSwipedId(id);
-    } else if (distance < -40) { // Geser ke kanan (batal)
-      if (swipedId === id) setSwipedId(null);
-    }
-  };
-
   const deleteNotif = async (id) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
-    setSwipedId(null);
-    setShowDeleteId(null);
-
     if (typeof id === 'string' && id.startsWith('system-alert-stock')) return;
-    
     await supabase.from('notifications').delete().eq('id', id);
   };
 
   const markAsRead = async (id) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-    
     if (typeof id === 'string' && id.startsWith('system-alert-stock')) return; 
     await supabase.from('notifications').update({ is_read: true }).eq('id', id);
   };
@@ -205,14 +142,9 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
     return name.substring(0, 2).toUpperCase();
   };
 
-  const renderNotifIcon = (type) => {
-    switch (type) {
-      case 'approved': return <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />;
-      case 'rejected': return <XCircle size={16} className="text-red-600 shrink-0 mt-0.5" />;
-      case 'request': return <PackagePlus size={16} className="text-blue-600 shrink-0 mt-0.5" />;
-      case 'alert': return <TriangleAlert size={16} className="text-red-600 shrink-0 mt-0.5" />;
-      default: return <Clock size={16} className="text-amber-600 shrink-0 mt-0.5" />;
-    }
+  const renderNotifIcon = (type, isRead) => {
+    if (type === 'alert') return <TriangleAlert size={20} strokeWidth={2} className="text-red-600" />;
+    return <PackagePlus size={20} strokeWidth={2} className={!isRead ? "text-blue-600" : "text-zinc-400"} />;
   };
 
   return (
@@ -230,89 +162,88 @@ export default function Header({ isOpen, setIsOpen, role = 'manager' }) {
         {/* DROPDOWN NOTIFIKASI */}
         <div className="relative" ref={notifRef}>
           <button 
-            onClick={() => { setNotifOpen(!notifOpen); setDropdownOpen(false); setSwipedId(null); setShowDeleteId(null); }}
+            onClick={() => { setNotifOpen(!notifOpen); setDropdownOpen(false); }}
             className="p-2 rounded-full hover:bg-white/10 transition-all relative cursor-pointer"
           >
             <Bell size={24} />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full animate-pulse shadow-sm">
+              <span className="absolute top-1 right-1 flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full animate-pulse shadow-sm border-2 border-[#00664b]">
                 {unreadCount}
               </span>
             )}
           </button>
 
           {notifOpen && (
-            <div className="absolute right-0 mt-2 w-80 bg-white border border-zinc-200 shadow-xl rounded-xl p-0 overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50 text-zinc-700">
-              <div className="px-4 py-3 bg-zinc-50 border-b border-zinc-100 flex items-center justify-between">
+            <div className="absolute right-0 mt-3 w-[350px] bg-white border border-zinc-200 shadow-2xl rounded-xl p-0 overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50 text-zinc-700">
+              
+              {/* HEADER NOTIFIKASI */}
+              <div className="px-5 py-4 bg-white border-b border-zinc-200 flex items-center justify-between sticky top-0 z-10">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-zinc-900">Notifikasi</span>
-                  <span className="text-[11px] font-bold px-2.5 py-0.5 bg-[#dcfce7] text-[#00664b] rounded-md capitalize tracking-wide border border-[#bbf7d0]">
+                  <span className="text-[15px] font-bold text-zinc-900 tracking-tight">Notifikasi :</span>
+                  <span className="text-[13px] font-semibold px-2.5 py-0.5 bg-[#d1fae5] text-[#00664b] rounded-md capitalize">
                     {role}
                   </span>
                 </div>
-                {unreadCount > 0 && (
-                  <button onClick={markAllAsRead} className="text-[10px] font-bold text-[#00664b] hover:underline cursor-pointer">
-                    Tandai dibaca
-                  </button>
-                )}
+                
+                <div className="flex items-center gap-4">
+                  {unreadCount > 0 && (
+                    <button onClick={markAllAsRead} className="text-xs font-semibold text-[#00664b] hover:text-[#004d38] cursor-pointer transition-colors">
+                      Tandai Dibaca
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="max-h-80 overflow-y-auto overflow-x-hidden">
+              {/* DAFTAR NOTIFIKASI */}
+              <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
                 {notifications.length === 0 ? (
-                  <div className="p-6 text-center text-zinc-400 text-xs font-medium">Tidak ada notifikasi baru</div>
+                  <div className="p-8 text-center text-zinc-400 text-xs font-medium">Tidak ada notifikasi.</div>
                 ) : (
                   notifications.map((notif) => (
                     <div 
                       key={notif.id} 
-                      className="relative overflow-hidden border-b border-zinc-100 last:border-b-0 bg-zinc-50"
-                      onMouseEnter={() => handleMouseEnter(notif.id)}
-                      onMouseLeave={handleMouseLeave}
+                      onClick={() => markAsRead(notif.id)}
+                      className={`group relative overflow-hidden border-b border-zinc-100 last:border-b-0 p-4 flex cursor-pointer transition-colors ${
+                        notif.type === 'alert' ? 'bg-[#ffedeb]' : 'bg-white'
+                      } ${notif.is_read && notif.type !== 'alert' ? 'opacity-60' : ''}`}
                     >
+                      {/* Titik Biru (Unread) */}
+                      <div className="w-4 flex items-start pt-1.5 justify-start shrink-0">
+                        {!notif.is_read && (
+                          <div className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
+                        )}
+                      </div>
                       
-                      {/* Tombol Silang (X) Bulat di Belakang */}
-                      <div 
-                        onClick={(e) => { e.stopPropagation(); deleteNotif(notif.id); }}
-                        className="absolute right-0 top-0 bottom-0 w-[50px] flex items-center justify-center cursor-pointer"
-                      >
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                          <X size={18} />
-                        </div>
+                      {/* Ikon */}
+                      <div className="shrink-0 mr-3 mt-0.5">
+                        {renderNotifIcon(notif.type, notif.is_read)}
                       </div>
 
-                      {/* Konten Notifikasi Yang Bisa Bergeser (Slide) */}
-                      <div 
-                        onTouchStart={handleTouchStart}
-                        onTouchEnd={(e) => handleTouchEnd(e, notif.id)}
-                        onClick={() => {
-                          if (swipedId === notif.id || showDeleteId === notif.id) {
-                            setSwipedId(null);
-                            setShowDeleteId(null);
-                          } else {
-                            markAsRead(notif.id);
-                          }
-                        }}
-                        className={`relative z-10 w-full p-3.5 flex gap-3 cursor-pointer transition-transform duration-300 ${
-                          swipedId === notif.id || showDeleteId === notif.id ? '-translate-x-[50px]' : 'translate-x-0'
-                        } ${
-                          !notif.is_read ? (notif.type === 'alert' ? 'bg-red-50/90' : 'bg-emerald-50/90') : 'bg-white'
-                        }`}
-                      >
-                        {!notif.is_read && <div className="absolute left-1 top-5 w-1.5 h-1.5 bg-blue-500 rounded-full" />}
+                      {/* Konten Teks */}
+                      <div className="flex-1 pr-6 flex flex-col justify-center">
+                        <p className={`text-[14px] font-semibold leading-tight ${notif.type === 'alert' ? 'text-red-600' : (!notif.is_read ? 'text-zinc-900' : 'text-zinc-600')}`}>
+                          {notif.title}
+                        </p>
                         
-                        {renderNotifIcon(notif.type)}
-                        <div className="flex-1 space-y-0.5 pr-2">
-                          <div className="flex items-center justify-between">
-                            <p className={`text-xs font-bold ${notif.type === 'alert' ? 'text-red-700' : (!notif.is_read ? 'text-zinc-900' : 'text-zinc-400')}`}>
-                              {notif.title}
-                            </p>
-                            <span className="text-[9px] text-zinc-400 font-medium whitespace-nowrap">{formatTimeAgo(notif.created_at)}</span>
-                          </div>
-                          <p className={`text-[11px] leading-snug ${notif.type === 'alert' ? 'text-red-600 font-medium' : (!notif.is_read ? 'text-zinc-600' : 'text-zinc-400')}`}>
-                            {notif.message}
-                          </p>
+                        <div className={`text-[12px] mt-0.5 leading-snug ${notif.type === 'alert' ? 'text-red-600' : (!notif.is_read ? 'text-zinc-600' : 'text-zinc-500')}`}>
+                          {notif.message.split('\n').map((line, index) => (
+                            <p key={index}>{line}</p>
+                          ))}
                         </div>
+
+                        <p className="text-[10px] text-zinc-400 font-medium pt-1.5">
+                          {formatNotifDate(notif.created_at)}
+                        </p>
                       </div>
 
+                      {/* Tombol Silang (X) Merah muncul otomatis di Kanan Atas hanya saat kursor di-hover */}
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); deleteNotif(notif.id); }}
+                        className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:bg-red-100 rounded-md p-0.5 cursor-pointer"
+                        title="Hapus Notifikasi"
+                      >
+                        <X size={15} strokeWidth={2.5} />
+                      </button>
                     </div>
                   ))
                 )}
