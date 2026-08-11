@@ -308,7 +308,7 @@ export default function ApprovalRequest() {
 
         {/* Tab Filter */}
         <div className="flex items-center gap-6 border-b border-[#00664b]/20 text-sm overflow-x-auto">
-          {['Semua', 'Menunggu Manager', 'Selesai', 'Ditolak'].map((status) => (
+          {['Menunggu Manager', 'Selesai', 'Ditolak','Semua'].map((status) => (
             <button 
               key={status}
               onClick={() => setActiveTab(status)}
