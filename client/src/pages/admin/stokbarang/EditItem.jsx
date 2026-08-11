@@ -8,7 +8,7 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
     id: '', 
     name: '', 
     category: '', 
-    stock: '', 
+    restockAmount: '',
     location: '', 
     date: '' 
   });
@@ -18,7 +18,7 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
   // 📍 1. STATE UNTUK MENYIMPAN DAFTAR KATEGORI
   const [kategoriList, setKategoriList] = useState([]);
 
-  // 📍 2. FUNGSI UNTUK MENGAMBIL KATEGORI DARI DATABASE (Hanya yang belum dihapus)
+  // 📍 2. FUNGSI UNTUK MENGAMBIL KATEGORI DARI DATABASE
   useEffect(() => {
     const fetchKategori = async () => {
       const { data, error } = await supabase
@@ -39,7 +39,7 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
         id: itemData.id || '',
         name: itemData.name || '',
         category: itemData.category || '',
-        stock: itemData.stock || 0,
+        restockAmount: '', // 🔥 Dikosongkan setiap kali modal dibuka
         location: itemData.location || '',
         date: itemData.date || '' 
       });
@@ -53,16 +53,18 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
     const toastId = toast.loading('Sedang memperbarui data...');
 
     try {
-      const stokBaru = parseInt(formData.stock) || 0;
+      // 🔥 LOGIKA PENJUMLAHAN STOK
+      const tambahanStok = parseInt(formData.restockAmount) || 0; // Kalau kosong, berarti 0 (tidak ada tambahan)
       const stokLama = parseInt(itemData.stock) || 0;
-      const selisihStok = stokBaru - stokLama;
+      const stokBaru = stokLama + tambahanStok; // Sistem otomatis menjumlahkan
 
+      // UPDATE DATA BARANG UTAMA
       const { error } = await supabase
         .from('items')
         .update({
           name: formData.name,
           category: formData.category,
-          stock: stokBaru,
+          stock: stokBaru, // Masukkan stok yang sudah dijumlahkan
           location: formData.location || '-',
           date: formData.date,
           status: stokBaru <= 3 ? 'Kritis' : 'Aman'
@@ -71,25 +73,20 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
 
       if (error) throw error;
 
-      if (selisihStok > 0) {
+      // 🔥 LOGIKA RESTOCK OTOMATIS: JIKA ADA ANGKA RESTOCK, CATAT KE stock_in
+      if (tambahanStok > 0) {
         const { error: logError } = await supabase
-          .from('activity_logs')
+          .from('stock_in')
           .insert([
             {
-              transaction_id: `UPD-${formData.id}-${Date.now().toString().slice(-4)}`,
-              requester: 'Admin',
-              item_name: formData.name,
-              qty: selisihStok,
-              type: 'Masuk',
-              status: 'Selesai',
-              manager_status: 'Approved',
-              admin_status: 'Selesai',
-              date: new Date().toISOString().split('T')[0]
+              kode_barang: formData.id,
+              jumlah_masuk: tambahanStok,
+              keterangan: 'Penambahan stok dari Edit Item'
             }
           ]);
 
         if (logError) {
-          console.error('Gagal mencatat log aktivitas:', logError.message);
+          console.error('Gagal mencatat log stok masuk:', logError.message);
         }
       }
 
@@ -135,7 +132,6 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-zinc-700 mb-1">Kategori</label>
-              {/* 📍 3. DROPDOWN KATEGORI SUDAH DINAMIS */}
               <select 
                 required
                 value={formData.category} 
@@ -150,19 +146,25 @@ export default function EditItem({ itemData, onClose, onSuccess }) {
                 ))}
               </select>
             </div>
+            
+            {/* 🔥 BAGIAN INPUT RESTOCK BARANG */}
             <div>
-              <label className="block text-sm font-semibold text-zinc-700 mb-1">Jumlah Stok</label>
+              <label className="block text-sm font-semibold text-zinc-700 mb-1 flex items-center justify-between">
+                Restock Barang <span className="text-[11px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">Stok saat ini: {itemData?.stock || 0}</span>
+              </label>
               <input 
                 type="number" 
-                required 
                 min="0"
-                value={formData.stock} 
+                placeholder="Ketikan jumlah barang masuk..."
+                value={formData.restockAmount} 
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10);
-                  setFormData({ ...formData, stock: isNaN(val) ? '' : (val < 0 ? 0 : val) });
+                  // Kalau nilainya kosong atau bukan angka, jadikan string kosong
+                  setFormData({ ...formData, restockAmount: isNaN(val) ? '' : (val < 0 ? 0 : val) });
                 }}
-                className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]" 
+                className="w-full px-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white placeholder:text-zinc-400" 
               />
+              <p className="text-[10px] text-zinc-500 mt-1">*Kosongkan jika tidak ada penambahan stok baru.</p>
             </div>
           </div>
 
