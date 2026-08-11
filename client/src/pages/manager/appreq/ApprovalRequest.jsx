@@ -3,7 +3,7 @@ import { Search, Check, X, AlertCircle, X as CloseIcon, CheckSquare, MoreVertica
 import html2pdf from 'html2pdf.js';
 import TemplateDokumenA4 from '../../user/permintaan/TemplateDokumenA4'; 
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
 export default function ApprovalRequest() {
   const printRef = useRef();
@@ -11,7 +11,8 @@ export default function ApprovalRequest() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState('Menunggu Manager');
+  // Default tab di 'Semua'
+  const [activeTab, setActiveTab] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('Semua Prioritas');
   const [selectedRows, setSelectedRows] = useState([]);
@@ -28,13 +29,11 @@ export default function ApprovalRequest() {
   const [isExporting, setIsExporting] = useState(false);
 
   // ==========================================
-  // 🔥 SUPABASE REALTIME DI-AKTIFKAN!
+  // SUPABASE REALTIME DI-AKTIFKAN!
   // ==========================================
   useEffect(() => {
-    // 1. Tarik data pertama kali halaman dibuka
     fetchRequestsFromSupabase();
 
-    // 2. Subscribe ke Supabase Realtime untuk tabel 'requests'
     const requestChannel = supabase
       .channel('realtime-approval-requests')
       .on(
@@ -46,15 +45,13 @@ export default function ApprovalRequest() {
       )
       .subscribe();
 
-    // 3. Bersihkan channel saat komponen ditutup
     return () => {
       supabase.removeChannel(requestChannel);
     };
   }, []);
 
-  // 🔥 Parameter isBackground ditambahkan
   const fetchRequestsFromSupabase = async (isBackground = false) => {
-    if (!isBackground) setLoading(true); // Hanya tampilkan tulisan loading kalau bukan background refresh
+    if (!isBackground) setLoading(true);
     
     try {
       const { data, error } = await supabase
@@ -129,7 +126,7 @@ export default function ApprovalRequest() {
   }, [activeTab]);
 
   const filteredRequests = requests.filter(r => {
-    const matchTab = r.status?.toLowerCase() === activeTab.toLowerCase();
+    const matchTab = activeTab === 'Semua' ? true : r.status?.toLowerCase() === activeTab.toLowerCase();
     const matchPriority = selectedPriority === 'Semua Prioritas' ? true : r.prioritas === selectedPriority;
     const matchSearch = 
       r.namaPemohon.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -139,6 +136,10 @@ export default function ApprovalRequest() {
     return matchTab && matchPriority && matchSearch;
   });
 
+  const selectableRequests = activeTab === 'Semua' 
+    ? filteredRequests.filter(r => r.status?.toLowerCase() === 'menunggu manager')
+    : filteredRequests;
+
   const handleSelectRow = (e, id) => {
     e.stopPropagation(); 
     setSelectedRows(prev => prev.includes(id) ? prev.filter(rowId => rowId !== id) : [...prev, id]);
@@ -146,7 +147,7 @@ export default function ApprovalRequest() {
 
   const handleSelectAll = (e) => {
     if (e.target.checked) {
-      setSelectedRows(filteredRequests.map(r => r.id));
+      setSelectedRows(selectableRequests.map(r => r.id));
     } else {
       setSelectedRows([]);
     }
@@ -180,7 +181,7 @@ export default function ApprovalRequest() {
               .maybeSingle();
 
             if (itemData && itemData.stock < qtyToProcess) {
-              toast.error(`Gagal ACC: Stok "${item.namaBarang}" tidak mencukupi! (Sisa: ${itemData.stock}, Disetujui: ${qtyToProcess})`, { id: toastId, duration: 5000 });
+              toast.error(`Gagal: Stok "${item.namaBarang}" tidak mencukupi! (Sisa: ${itemData.stock}, Disetujui: ${qtyToProcess})`, { id: toastId, duration: 5000 });
               return; 
             }
           }
@@ -228,12 +229,11 @@ export default function ApprovalRequest() {
 
       if (error) throw error;
 
-      toast.success(`Permintaan berhasil ${confirmType === 'Selesai' ? 'di-ACC & Stok telah dipotong' : 'ditolak'}!`, { id: toastId });
+      toast.success(`Permintaan berhasil ${confirmType === 'Selesai' ? 'disetujui & stok dipotong' : 'ditolak'}!`, { id: toastId });
 
       setSelectedRows([]);
       setIsConfirmOpen(false);
       setIsModalOpen(false);
-      // Realtime otomatis nge-fetch, tapi kita jalankan fetch manual 1x biar seketika sinkron.
       fetchRequestsFromSupabase(true);
 
     } catch (error) {
@@ -270,7 +270,6 @@ export default function ApprovalRequest() {
   };
 
   const activeDetail = requests.find(item => item.id === selectedId);
-
   const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
   const namaManager = activeUser.namaLengkap || activeUser.name || activeUser.username || 'Manager';
 
@@ -304,22 +303,25 @@ export default function ApprovalRequest() {
       <div className="space-y-5">
         <div>
           <h2 className="text-xl font-bold text-white tracking-tight">Final Approval Manager</h2>
-          <p className="text-xs text-white font-medium mt-0.5">Tinjau permohonan yang telah diproses Admin dan berikan ACC Final.</p>
+          <p className="text-xs text-white font-medium mt-0.5">Tinjau permohonan yang telah diproses Admin dan berikan persetujuan final.</p>
         </div>
 
         {/* Tab Filter */}
-        <div className="flex items-center gap-6 border-b border-[#00664b]/20 text-sm">
-          {['Menunggu Manager', 'Selesai', 'Ditolak'].map((status) => (
+        <div className="flex items-center gap-6 border-b border-[#00664b]/20 text-sm overflow-x-auto">
+          {['Semua', 'Menunggu Manager', 'Selesai', 'Ditolak'].map((status) => (
             <button 
               key={status}
               onClick={() => setActiveTab(status)}
-              className={`pb-2.5 flex items-center gap-2 border-b-2 transition-all cursor-pointer text-white capitalize ${
+              className={`pb-2.5 flex items-center gap-2 border-b-2 transition-all cursor-pointer text-white capitalize whitespace-nowrap ${
                 activeTab === status ? 'border-white font-bold' : 'border-transparent opacity-75'
               }`}
             >
-              <span>{status === 'Menunggu Manager' ? 'Menunggu ACC' : status}</span>
+              {/* 🔥 Teks Menunggu ACC diubah jadi Menunggu Persetujuan */}
+              <span>{status === 'Menunggu Manager' ? 'Menunggu Persetujuan' : status}</span>
               <span className="bg-[#00664b] text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">
-                {requests.filter(r => r.status?.toLowerCase() === status.toLowerCase()).length}
+                {status === 'Semua' 
+                  ? requests.length 
+                  : requests.filter(r => r.status?.toLowerCase() === status.toLowerCase()).length}
               </span>
             </button>
           ))}
@@ -352,7 +354,7 @@ export default function ApprovalRequest() {
 
           <div 
             className={`transition-all duration-500 ease-out overflow-hidden flex items-center ${
-              selectedRows.length > 0 && activeTab === 'Menunggu Manager' 
+              selectedRows.length > 0 
                 ? 'opacity-100 translate-x-0 max-w-[500px] ml-4' 
                 : 'opacity-0 translate-x-12 max-w-0 ml-0 pointer-events-none'
             }`}
@@ -365,7 +367,7 @@ export default function ApprovalRequest() {
                 onClick={() => triggerConfirmation('Selesai', selectedRows)}
                 className="flex items-center gap-1.5 px-4 py-2 bg-[#00664b] hover:bg-[#00553e] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer mr-2 whitespace-nowrap"
               >
-                <Check size={14} /> ACC Semua
+                <Check size={14} /> Setujui Semua
               </button>
               <button 
                 onClick={() => triggerConfirmation('Ditolak', selectedRows)}
@@ -384,10 +386,10 @@ export default function ApprovalRequest() {
               <thead>
                 <tr className="border-b border-zinc-100 text-[11px] font-bold text-white uppercase bg-[#58a27d]">
                   <th className="py-3 px-4 w-12 text-center">
-                    {activeTab === 'Menunggu Manager' && (
+                    {['Menunggu Manager', 'Semua'].includes(activeTab) && selectableRequests.length > 0 && (
                       <input 
                         type="checkbox"
-                        checked={selectedRows.length === filteredRequests.length && filteredRequests.length > 0}
+                        checked={selectedRows.length === selectableRequests.length && selectableRequests.length > 0}
                         onChange={handleSelectAll}
                         className="w-3.5 h-3.5 rounded border-zinc-300 text-[#00664b] focus:ring-[#00664b] cursor-pointer accent-[#00664b]"
                       />
@@ -416,7 +418,7 @@ export default function ApprovalRequest() {
                       className={`hover:bg-zinc-50/80 transition-colors cursor-pointer ${selectedRows.includes(item.id) ? 'bg-emerald-50/40' : ''}`}
                     >
                       <td className="py-4 px-4 text-center">
-                        {activeTab === 'Menunggu Manager' && (
+                        {item.status?.toLowerCase() === 'menunggu manager' && (
                           <input 
                             type="checkbox"
                             checked={selectedRows.includes(item.id)}
@@ -429,7 +431,6 @@ export default function ApprovalRequest() {
                       <td className="py-4 px-2 font-mono font-bold text-zinc-900">{item.id}</td>
                       <td className="py-4 px-4 max-w-[150px]">
                         <div className="flex flex-col">
-                          {/* 🔥 Ditambahkan break-words jika teks kepanjangan */}
                           <span className="font-bold text-zinc-800 break-words">{item.namaPemohon}</span>
                           <span className="text-[10px] text-zinc-400 font-medium">{item.unit}</span>
                         </div>
@@ -501,7 +502,6 @@ export default function ApprovalRequest() {
               <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-4">
                 <div>
                   <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Nama Pemohon</span>
-                  {/* 🔥 Ditambahkan break-words jika teks kepanjangan */}
                   <span className="text-zinc-900 font-bold text-sm break-words">{activeDetail.namaPemohon}</span>
                 </div>
                 <div>
@@ -538,7 +538,6 @@ export default function ApprovalRequest() {
                       {activeDetail.items.map((item, index) => (
                         <tr key={index} className="hover:bg-zinc-50">
                           <td className="p-3 text-center text-zinc-400 font-mono">{index + 1}</td>
-                          {/* 🔥 Ditambahkan break-words agar kalau nama panjang tabel tidak stretch */}
                           <td className="p-3 font-bold text-zinc-700 break-words max-w-[150px]">{item.namaBarang}</td>
                           <td className="p-3 text-center">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -572,7 +571,7 @@ export default function ApprovalRequest() {
                     onClick={() => triggerConfirmation('Selesai', [activeDetail.id])}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-[#00664b] hover:bg-[#004d38] text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
                   >
-                    <Check size={16} /> ACC Final (Potong Stok)
+                    <Check size={16} /> Setujui & Proses Stok
                   </button>
                   <button 
                     onClick={() => triggerConfirmation('Ditolak', [activeDetail.id])}
@@ -608,10 +607,10 @@ export default function ApprovalRequest() {
             </div>
             
             <div className="space-y-1">
-              <h4 className="text-sm font-black text-zinc-900">Konfirmasi ACC Final</h4>
+              <h4 className="text-sm font-black text-zinc-900">Konfirmasi Persetujuan Final</h4>
               <p className="text-xs text-zinc-500 leading-relaxed">
                 Apakah Anda yakin ingin <span className={`font-bold ${confirmType === 'Selesai' ? 'text-[#00664b]' : 'text-red-500'}`}>
-                  {confirmType === 'Selesai' ? 'menyetujui (ACC)' : 'menolak'}
+                  {confirmType === 'Selesai' ? 'menyetujui' : 'menolak'}
                 </span>{' '}
                 {confirmTargets.length > 1 ? (
                   <span className="font-bold text-zinc-800">{confirmTargets.length} permintaan terpilih</span>
@@ -620,7 +619,7 @@ export default function ApprovalRequest() {
                 )}?
                 {confirmType === 'Selesai' && (
                   <span className="block mt-2 text-[11px] text-amber-600 font-semibold bg-amber-50 p-1.5 rounded border border-amber-200">
-                    ⚠️ ACC ini bersifat final. Stok barang akan dipotong dari gudang berdasarkan jumlah disetujui Admin.
+                    ⚠️ Tindakan ini bersifat final. Stok barang akan otomatis dipotong dari gudang berdasarkan jumlah yang disetujui.
                   </span>
                 )}
               </p>
