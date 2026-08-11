@@ -160,33 +160,47 @@ export default function StokBarang({ role = 'admin' }) {
   };
 
   // 🔥 FUNGSI EXPORT LAPORAN OPNAME (MUTASI STOK PER BARANG)
+// 🔥 FUNGSI EXPORT LAPORAN OPNAME (MUTASI STOK PER BARANG)
   const exportLaporanOpname = async () => {
     const toastId = toast.loading('Menghitung rekapitulasi stok...');
     try {
-      // 1. Dapatkan tanggal awal dan akhir bulan ini
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-      // 2. Ambil data barang yang disetujui (keluar) khusus di bulan ini saja
+      // 1. Ambil data dengan JOIN ke tabel requests (karena status ada di tabel requests)
+      // Kita pakai nama kolom yang sesuai dengan skema SQL kamu: jumlah_diminta & jumlah_disetujui
       const { data: requestData, error: reqError } = await supabase
         .from('request_items')
-        .select('kode_barang, qty')
-        .eq('status', 'Disetujui')
+        .select(`
+          kode_barang, 
+          jumlah_diminta, 
+          jumlah_disetujui,
+          created_at,
+          requests!inner(status)
+        `) 
+        .eq('requests.status', 'Disetujui')
         .gte('created_at', startOfMonth)
         .lte('created_at', endOfMonth);
 
-      if (reqError) throw reqError;
+      // Jika query gagal, tangkap pesan aslinya
+      if (reqError) {
+        throw new Error(`Database error: ${reqError.message}`);
+      }
 
-      // 3. Gabungkan dan hitung data untuk setiap barang di gudang
+      const validRequestData = requestData || [];
+
+      // 2. Gabungkan data
       const opnameData = processedItems.map(item => {
-        // Cari total barang ini yang keluar di bulan ini
-        const totalKeluarBulanIni = requestData
+        const totalKeluarBulanIni = validRequestData
           .filter(req => req.kode_barang === item.id)
-          .reduce((sum, current) => sum + (current.qty || 0), 0);
+          .reduce((sum, current) => {
+             // Pakai jumlah_disetujui, jika kosong pakai jumlah_diminta
+             const qtyKeluar = current.jumlah_disetujui ?? current.jumlah_diminta ?? 0;
+             return sum + Number(qtyKeluar);
+          }, 0);
 
-        // Asumsi simpel: Stok awal = Sisa Stok Sekarang + Yang sudah keluar bulan ini
-        const stokAwal = item.stock + totalKeluarBulanIni;
+        const stokAwal = Number(item.stock) + totalKeluarBulanIni;
 
         return {
           'Kode Barang': item.id,
@@ -198,30 +212,30 @@ export default function StokBarang({ role = 'admin' }) {
         };
       });
 
+      // 3. Pastikan library XLSX siap
+      if (typeof XLSX === 'undefined') {
+        throw new Error("Library XLSX belum terinstall. Jalankan: npm install xlsx");
+      }
+
       // 4. Buat File Excel
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(opnameData);
       
-      // Mengatur lebar kolom agar rapi di Excel
+      // Mengatur lebar kolom agar rapi saat dibuka di Excel
       ws['!cols'] = [
-        { wch: 15 }, // Kode
-        { wch: 30 }, // Nama
-        { wch: 20 }, // Kategori
-        { wch: 25 }, // Stok Awal
-        { wch: 25 }, // Barang Keluar
-        { wch: 25 }  // Sisa Barang
+        { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 25 }, { wch: 25 }, { wch: 25 }
       ];
 
       XLSX.utils.book_append_sheet(wb, ws, "Laporan Opname Stok");
 
-      // 5. Download File
+      // 5. Download File Excel
       const monthName = now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
       XLSX.writeFile(wb, `Laporan_Opname_BSNetOps_${monthName.replace(' ', '_')}.xlsx`);
       
       toast.success('Laporan Opname berhasil diunduh!', { id: toastId });
     } catch (error) {
-      console.error('Error export excel:', error);
-      toast.error('Gagal membuat laporan.', { id: toastId });
+      console.error('Error detail saat export excel:', error);
+      toast.error(`Gagal: ${error.message}`, { id: toastId, duration: 6000 });
     }
   };
 

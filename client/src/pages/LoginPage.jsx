@@ -153,7 +153,7 @@ export default function LoginPage() {
 
     // Menggunakan origin web yang stabil untuk reset password
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-      redirectTo: `https://bsnetops.pages.dev/`,
+      redirectTo: `https://bsnetops.pages.dev/reset-password`,
     });
 
     if (error) {
