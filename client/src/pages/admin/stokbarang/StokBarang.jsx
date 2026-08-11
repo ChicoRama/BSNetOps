@@ -160,7 +160,6 @@ export default function StokBarang({ role = 'admin' }) {
   };
 
   // 🔥 FUNGSI EXPORT LAPORAN OPNAME (MUTASI STOK PER BARANG)
-// 🔥 FUNGSI EXPORT LAPORAN OPNAME (MUTASI STOK PER BARANG)
   const exportLaporanOpname = async () => {
     const toastId = toast.loading('Menghitung rekapitulasi stok...');
     try {
@@ -169,7 +168,6 @@ export default function StokBarang({ role = 'admin' }) {
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
       // 1. Ambil data dengan JOIN ke tabel requests (karena status ada di tabel requests)
-      // Kita pakai nama kolom yang sesuai dengan skema SQL kamu: jumlah_diminta & jumlah_disetujui
       const { data: requestData, error: reqError } = await supabase
         .from('request_items')
         .select(`
@@ -190,25 +188,27 @@ export default function StokBarang({ role = 'admin' }) {
 
       const validRequestData = requestData || [];
 
-      // 2. Gabungkan data
-      const opnameData = processedItems.map(item => {
+      // 2. Format Data untuk Laporan Excel
+      const opnameData = processedItems.map((item, index) => {
+        // Hitung total barang keluar bulan ini berdasarkan jumlah disetujui/diminta
         const totalKeluarBulanIni = validRequestData
           .filter(req => req.kode_barang === item.id)
           .reduce((sum, current) => {
-             // Pakai jumlah_disetujui, jika kosong pakai jumlah_diminta
              const qtyKeluar = current.jumlah_disetujui ?? current.jumlah_diminta ?? 0;
              return sum + Number(qtyKeluar);
           }, 0);
 
+        // Menghitung stok awal (Asumsi: Stok Awal = Sisa Stok Sekarang + Yang Sudah Keluar Bulan Ini)
         const stokAwal = Number(item.stock) + totalKeluarBulanIni;
 
         return {
+          'No': index + 1,
           'Kode Barang': item.id,
           'Nama Barang': item.name,
           'Kategori': item.category,
-          'Total Stok Awal (Masuk)': stokAwal,
-          'Barang Keluar (Bulan Ini)': totalKeluarBulanIni,
-          'Sisa Barang (Sekarang)': item.stock,
+          'Stok Awal (Awal Bulan)': stokAwal,
+          'Total Keluar (Bulan Ini)': totalKeluarBulanIni,
+          'Stok Akhir (Sistem)': item.stock,
         };
       });
 
@@ -223,10 +223,16 @@ export default function StokBarang({ role = 'admin' }) {
       
       // Mengatur lebar kolom agar rapi saat dibuka di Excel
       ws['!cols'] = [
-        { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 25 }, { wch: 25 }, { wch: 25 }
+        { wch: 5 },  // No
+        { wch: 15 }, // Kode
+        { wch: 30 }, // Nama
+        { wch: 20 }, // Kategori
+        { wch: 25 }, // Stok Awal
+        { wch: 25 }, // Total Keluar
+        { wch: 25 }  // Stok Akhir
       ];
 
-      XLSX.utils.book_append_sheet(wb, ws, "Laporan Opname Stok");
+      XLSX.utils.book_append_sheet(wb, ws, "Rekap Stok Bulanan");
 
       // 5. Download File Excel
       const monthName = now.toLocaleString('id-ID', { month: 'long', year: 'numeric' });
