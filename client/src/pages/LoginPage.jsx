@@ -10,7 +10,6 @@ export default function LoginPage() {
   const [showForgot, setShowForgot] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // State form dikembalikan menggunakan username (untuk menyimpan input email)
   const [form, setForm] = useState({
     username: "", 
     password: "",
@@ -25,7 +24,6 @@ export default function LoginPage() {
     general: "", 
   });
 
-  // Cek apakah ada email yang tersimpan sebelumnya
   useEffect(() => {
     const savedEmail = localStorage.getItem("rememberedEmail");
     if(savedEmail){
@@ -62,30 +60,8 @@ export default function LoginPage() {
     const inputEmail = form.username.trim().toLowerCase();
 
     try {
-      // 1. CEK DATA ROLE DAN STATUS PENANGGUHAN DI DATABASE
-      const { data: roleData } = await supabase
-        .from('user_roles')
-        .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon')
-        .eq('email', inputEmail)
-        .maybeSingle(); 
-
-      // Cek apakah akun ditangguhkan
-      if (roleData && roleData.is_suspended === true) {
-        toast.error(
-          (t) => (
-            <div>
-              <b className="text-red-700 font-bold text-sm">Akun Ditangguhkan!</b>
-              <p className="text-xs mt-1 text-slate-600">Anda tidak memiliki akses ke dalam sistem. Silakan hubungi Admin Gudang.</p>
-            </div>
-          ), 
-          { duration: 5000, icon: '⛔' }
-        );
-        setIsLoading(false);
-        return; 
-      }
-
-      // 2. LOGIN LANGSUNG KE SUPABASE MENGGUNAKAN EMAIL
-      const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
+      // 🔥 1. LOGIN DULU KE SUPABASE AUTH (Biar sistem kenal siapa kita)
+      const { data: authData, error: supabaseError } = await supabase.auth.signInWithPassword({
         email: inputEmail, 
         password: form.password,
       });
@@ -96,15 +72,41 @@ export default function LoginPage() {
         return;
       }
 
+      // 🔥 2. SETELAH BERHASIL LOGIN, BARU AMBIL DATA ROLE DI TABEL (Pasti diizinkan oleh database)
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon')
+        .ilike('email', inputEmail) // Pakai ilike agar tidak sensitif huruf besar/kecil
+        .maybeSingle(); 
+
+      // 🔥 3. CEK APAKAH AKUN DITANGGUHKAN
+      if (roleData && roleData.is_suspended === true) {
+        // Keluarkan (logout) paksa karena dia disuspend
+        await supabase.auth.signOut();
+        
+        toast.error(
+          (t) => (
+            <div>
+              <b className="text-red-700 font-bold text-sm">Akun Ditangguhkan!</b>
+              <p className="text-xs mt-1 text-slate-600">Anda tidak memiliki akses ke dalam sistem. Silakan hubungi Admin.</p>
+            </div>
+          ), 
+          { duration: 5000, icon: '⛔' }
+        );
+        setIsLoading(false);
+        return; 
+      }
+
+      // 4. TENTUKAN ROLE
       let userRole = "user"; 
       if (roleData && roleData.role) {
         userRole = roleData.role.toLowerCase(); 
       }
 
-      // 3. SIMPAN SESI DAN DATA PROFIL
-      if (data.session) {
-        localStorage.setItem("token", data.session.access_token);
-        localStorage.setItem("access_token", data.session.access_token);
+      // 5. SIMPAN SESI DAN DATA PROFIL
+      if (authData.session) {
+        localStorage.setItem("token", authData.session.access_token);
+        localStorage.setItem("access_token", authData.session.access_token);
 
         if (form.remember) {
           localStorage.setItem("rememberedEmail", inputEmail);
@@ -124,7 +126,7 @@ export default function LoginPage() {
         localStorage.setItem("userProfile", JSON.stringify(profileInfo));
       }
 
-      // 4. ARAHKAN KE DASHBOARD SESUAI ROLE
+      // 6. ARAHKAN KE DASHBOARD SESUAI ROLE
       if (userRole === "admin" || userRole === "head unit") {
         navigate("/admin");
       } else if (userRole === "manager") {
@@ -151,7 +153,6 @@ export default function LoginPage() {
 
     const toastId = toast.loading("Mengirim link..."); 
 
-    // Menggunakan origin web yang stabil untuk reset password
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
       redirectTo: `https://bsnetops.pages.dev/reset-password`,
     });

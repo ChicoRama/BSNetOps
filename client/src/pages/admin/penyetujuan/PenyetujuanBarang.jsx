@@ -427,7 +427,7 @@ export default function PenyetujuanBarang() {
                 </div>
               </div>
 
-              <h3 className="font-bold text-gray-800 mb-3 text-sm">Penyesuaian Barang (Adjustment & Cek Stok Real-Time)</h3>
+              <h3 className="font-bold text-gray-800 mb-3 text-sm">Penyesuaian Barang</h3>
               
               <div className="border border-zinc-200 rounded-xl overflow-hidden bg-white shadow-sm">
                 <table className="w-full text-left text-sm border-collapse">

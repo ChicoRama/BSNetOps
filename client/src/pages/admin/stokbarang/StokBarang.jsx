@@ -21,8 +21,9 @@ export default function StokBarang({ role = 'admin' }) {
   const [categoryFilter, setCategoryFilter] = useState('Semua');
   const [sortOrder, setSortOrder] = useState('none');
 
-  // 🔥 State untuk Modal Export Bulan
+  // 🔥 State untuk Modal Export (Bulanan & Tahunan)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportType, setExportType] = useState('bulanan'); // 'bulanan' atau 'tahunan'
   const [exportMonth, setExportMonth] = useState(new Date().getMonth()); 
   const [exportYear, setExportYear] = useState(new Date().getFullYear()); 
 
@@ -65,14 +66,12 @@ export default function StokBarang({ role = 'admin' }) {
 
   const handleEditClick = (item) => { setSelectedItem(item); setIsEditOpen(true); };
 
-  // 🔥 FUNGSI BARU: Buka Modal Restock
   const handleRestockClick = (item) => {
     setSelectedItem(item);
     setRestockData({ jumlah: '', keterangan: '' });
     setIsRestockOpen(true);
   };
 
-  // 🔥 FUNGSI BARU: Simpan Barang Masuk ke Database
   const submitRestock = async () => {
     if (!restockData.jumlah || restockData.jumlah <= 0) {
       toast.error("Jumlah barang masuk harus lebih dari 0");
@@ -80,7 +79,6 @@ export default function StokBarang({ role = 'admin' }) {
     }
     const toastId = toast.loading('Memproses barang masuk...');
     try {
-      // 1. Catat di tabel stock_in
       const { error: insertError } = await supabase.from('stock_in').insert([{
         kode_barang: selectedItem.id,
         jumlah_masuk: Number(restockData.jumlah),
@@ -88,14 +86,13 @@ export default function StokBarang({ role = 'admin' }) {
       }]);
       if (insertError) throw insertError;
 
-      // 2. Update stok di tabel items
       const stokBaru = Number(selectedItem.stock) + Number(restockData.jumlah);
       const { error: updateError } = await supabase.from('items').update({ stock: stokBaru }).eq('id', selectedItem.id);
       if (updateError) throw updateError;
 
       toast.success('Stok berhasil ditambahkan!', { id: toastId });
       setIsRestockOpen(false);
-      fetchItems(); // Refresh data
+      fetchItems(); 
     } catch (error) {
       toast.error(`Gagal: ${error.message}`, { id: toastId });
     }
@@ -147,30 +144,38 @@ export default function StokBarang({ role = 'admin' }) {
     });
   };
 
-  // 🔥 FUNGSI EXPORT LAPORAN OPNAME (VERSI EXCELJS - FULL DESIGN)
+  // 🔥 FUNGSI EXPORT LAPORAN OPNAME (Mendukung Bulanan & Tahunan)
   const exportLaporanOpname = async () => {
     setIsExportModalOpen(false); 
     const toastId = toast.loading('Menyiapkan rekapitulasi stok yang cantik...');
     try {
-      const startOfMonth = new Date(exportYear, exportMonth, 1).toISOString();
-      const endOfMonth = new Date(exportYear, exportMonth + 1, 0, 23, 59, 59, 999).toISOString();
-      const namaBulanPilih = new Date(exportYear, exportMonth).toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+      // Tentukan rentang waktu berdasarkan pilihan (Bulanan atau Tahunan)
+      let startOfPeriod, endOfPeriod, namaPeriode;
 
-      // Ambil barang yang diinput sebelum/sama dengan akhir bulan pilihan
-      const validItems = items.filter(item => item.deleted_at === null && new Date(item.created_at) <= new Date(endOfMonth));
+      if (exportType === 'tahunan') {
+        startOfPeriod = new Date(exportYear, 0, 1).toISOString();
+        endOfPeriod = new Date(exportYear, 11, 31, 23, 59, 59, 999).toISOString();
+        namaPeriode = `Tahun_${exportYear}`;
+      } else {
+        startOfPeriod = new Date(exportYear, exportMonth, 1).toISOString();
+        endOfPeriod = new Date(exportYear, exportMonth + 1, 0, 23, 59, 59, 999).toISOString();
+        namaPeriode = new Date(exportYear, exportMonth).toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+      }
 
-      // Jika kosong
+      // Ambil barang yang diinput sebelum/sama dengan akhir periode pilihan
+      const validItems = items.filter(item => item.deleted_at === null && new Date(item.created_at) <= new Date(endOfPeriod));
+
       if (validItems.length === 0) {
-        toast.error(`Data kosong di ${namaBulanPilih}.`, { id: toastId });
+        toast.error(`Data kosong di ${namaPeriode.replace('_', ' ')}.`, { id: toastId });
         return; 
       }
 
       // 1. Ambil Data Keluar (Request Items)
-      const { data: reqData } = await supabase.from('request_items').select(`kode_barang, jumlah_diminta, jumlah_disetujui, requests (status)`).gte('created_at', startOfMonth).lte('created_at', endOfMonth);
+      const { data: reqData } = await supabase.from('request_items').select(`kode_barang, jumlah_diminta, jumlah_disetujui, requests (status)`).gte('created_at', startOfPeriod).lte('created_at', endOfPeriod);
       const validReqData = reqData || [];
 
       // 2. Ambil Data Masuk (Stock In)
-      const { data: inData } = await supabase.from('stock_in').select('kode_barang, jumlah_masuk').gte('created_at', startOfMonth).lte('created_at', endOfMonth);
+      const { data: inData } = await supabase.from('stock_in').select('kode_barang, jumlah_masuk').gte('created_at', startOfPeriod).lte('created_at', endOfPeriod);
       const validInData = inData || [];
 
       // 3. Kalkulasi per Barang
@@ -185,7 +190,6 @@ export default function StokBarang({ role = 'admin' }) {
 
         const totalMasuk = validInData.filter(r => r.kode_barang === item.id).reduce((sum, curr) => sum + Number(curr.jumlah_masuk || 0), 0);
         
-        // Hitung Awal & Akhir
         const stokSekarang = Number(item.stock || 0);
         const stokAwal = stokSekarang - totalMasuk + totalKeluar;
 
@@ -212,12 +216,11 @@ export default function StokBarang({ role = 'admin' }) {
       });
 
       // ==========================================
-      // 🎨 MULAI PROSES DESAIN MENGGUNAKAN EXCELJS
+      // 🎨 PROSES DESAIN MENGGUNAKAN EXCELJS
       // ==========================================
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(`Rekap ${namaBulanPilih}`);
+      const worksheet = workbook.addWorksheet(`Rekap ${namaPeriode.replace('_', ' ')}`);
 
-      // Atur Kolom dan Lebarnya
       worksheet.columns = [
         { header: 'No', key: 'no', width: 6 },
         { header: 'Kode Barang', key: 'kode', width: 16 },
@@ -229,24 +232,22 @@ export default function StokBarang({ role = 'admin' }) {
         { header: 'Stok Akhir', key: 'akhir', width: 15 }
       ];
 
-      // Masukkan Data
       worksheet.addRows(opnameData);
 
-      // Desain Header (Baris 1)
+      // Desain Header
       const headerRow = worksheet.getRow(1);
-      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }; // Teks Putih
+      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }; 
       headerRow.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FF00664B' } // Hijau Gelap BSNetOps
+        fgColor: { argb: 'FF00664B' } 
       };
       headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
       headerRow.height = 25;
 
-      // Desain Seluruh Sel (Border dan Rata Tengah)
+      // Desain Seluruh Sel
       worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
         row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-          // Kasih garis tabel pinggir
           cell.border = {
             top: { style: 'thin' },
             left: { style: 'thin' },
@@ -254,7 +255,6 @@ export default function StokBarang({ role = 'admin' }) {
             right: { style: 'thin' }
           };
           
-          // Semua rata tengah, kecuali kolom Nama Barang (Rata Kiri)
           if (rowNumber > 1) {
             if (colNumber === 3) {
               cell.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -265,21 +265,20 @@ export default function StokBarang({ role = 'admin' }) {
         });
       });
 
-      // Desain Khusus Baris "TOTAL KESELURUHAN" (Baris Paling Bawah)
-      const lastRow = worksheet.getRow(totalBaris + 2); // +2 karena ada header
+      // Desain Baris Total
+      const lastRow = worksheet.getRow(totalBaris + 2); 
       lastRow.font = { bold: true };
       lastRow.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFFDE047' } // Kuning Terang
+        fgColor: { argb: 'FFFDE047' } 
       };
 
-      // 5. Render & Download File
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      saveAs(blob, `Laporan_Opname_${namaBulanPilih.replace(' ', '_')}.xlsx`);
+      saveAs(blob, `Laporan_Opname_${namaPeriode}.xlsx`);
       
-      toast.success(`Laporan berhasil diunduh!`, { id: toastId });
+      toast.success(`Laporan ${namaPeriode.replace('_', ' ')} berhasil diunduh!`, { id: toastId });
     } catch (error) { 
       toast.error(`Gagal: ${error.message}`, { id: toastId, duration: 6000 }); 
     }
@@ -294,11 +293,10 @@ export default function StokBarang({ role = 'admin' }) {
     .sort((a, b) => sortOrder === 'asc' ? a.name.localeCompare(b.name) : sortOrder === 'desc' ? b.name.localeCompare(a.name) : 0);
 
   const bulanList = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-  const tahunList = Array.from({length: new Date().getFullYear() - 2025}, (_, i) => new Date().getFullYear() - i); // 2026 ke atas
+  const tahunList = Array.from({length: new Date().getFullYear() - 2025}, (_, i) => new Date().getFullYear() - i);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 relative">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div className="flex items-center gap-3">
           {showTrash && <button onClick={() => setShowTrash(false)} className="p-2 bg-white border border-zinc-200 rounded-xl shadow-md text-[#00664b] hover:bg-emerald-50 transition-all cursor-pointer"><ArrowLeft size={18} /></button>}
@@ -308,9 +306,7 @@ export default function StokBarang({ role = 'admin' }) {
           </div>
         </div>
 
-        {/* 🔥 Ubah flex-wrap menjadi flex-col dan atur posisinya (items-end atau items-start) */}
         <div className="flex flex-col items-end gap-3">
-          
           {isAdmin && !showTrash && (
             <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center w-full sm:w-auto gap-2 px-4 py-2 bg-white text-[#00664b] border-2 border-[#00664b] rounded-xl text-sm font-semibold shadow-sm hover:bg-emerald-50 transition-all cursor-pointer">
               <Download size={16} /> Laporan Opname
@@ -385,33 +381,7 @@ export default function StokBarang({ role = 'admin' }) {
         </table>
       </div>
 
-      {/* 🔥 MODAL RESTOCK (BARANG MASUK) */}
-      {isRestockOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-zinc-900 mb-1">Barang Masuk (Restock)</h3>
-            <p className="text-xs text-zinc-500 mb-4">Tambahkan stok untuk: <strong className="text-emerald-700">{selectedItem?.name}</strong></p>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Jumlah Masuk (Pcs)</label>
-                <input type="number" min="1" value={restockData.jumlah} onChange={(e) => setRestockData({...restockData, jumlah: e.target.value})} className="w-full p-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" placeholder="Masukkan angka..."/>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Keterangan (Opsional)</label>
-                <input type="text" value={restockData.keterangan} onChange={(e) => setRestockData({...restockData, keterangan: e.target.value})} className="w-full p-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none" placeholder="Misal: Beli dari Supplier A"/>
-              </div>
-            </div>
-
-            <div className="flex gap-2 justify-end mt-6">
-              <button onClick={() => setIsRestockOpen(false)} className="px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 rounded-xl cursor-pointer">Batal</button>
-              <button onClick={submitRestock} className="px-4 py-2 text-sm text-white bg-emerald-600 hover:bg-emerald-700 font-bold rounded-xl shadow-md cursor-pointer">Simpan Stok</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Pilih Bulan */}
+      {/* MODAL PILIH PERIODE EXPORT (BULANAN / TAHUNAN) */}
       {isExportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
@@ -419,21 +389,49 @@ export default function StokBarang({ role = 'admin' }) {
               <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center"><Calendar size={20} /></div>
               <div><h3 className="text-lg font-bold text-zinc-900">Pilih Periode Laporan</h3><p className="text-xs text-zinc-500">Rekapitulasi masuk & keluar.</p></div>
             </div>
-            <div className="space-y-4 my-6">
+
+            <div className="space-y-4 my-4">
+              {/* Pilihan Jenis Rekap (Bulanan / Tahunan) */}
               <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Bulan</label>
-                <select value={exportMonth} onChange={(e) => setExportMonth(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm">
-                  {bulanList.map((bulan, i) => <option key={i} value={i}>{bulan}</option>)}
-                </select>
+                <label className="block text-xs font-semibold text-zinc-700 mb-1">Jenis Rekap</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setExportType('bulanan')}
+                    className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${exportType === 'bulanan' ? 'bg-[#00664b] text-white border-[#00664b]' : 'bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100'}`}
+                  >
+                    Bulanan
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setExportType('tahunan')}
+                    className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${exportType === 'tahunan' ? 'bg-[#00664b] text-white border-[#00664b]' : 'bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100'}`}
+                  >
+                    Tahunan (Per Tahun)
+                  </button>
+                </div>
               </div>
+
+              {/* Pilihan Bulan (Hanya muncul jika jenis bulanan) */}
+              {exportType === 'bulanan' && (
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Bulan</label>
+                  <select value={exportMonth} onChange={(e) => setExportMonth(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]">
+                    {bulanList.map((bulan, i) => <option key={i} value={i}>{bulan}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {/* Pilihan Tahun */}
               <div>
                 <label className="block text-xs font-semibold text-zinc-700 mb-1">Tahun</label>
-                <select value={exportYear} onChange={(e) => setExportYear(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm">
+                <select value={exportYear} onChange={(e) => setExportYear(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]">
                   {tahunList.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
             </div>
-            <div className="flex gap-3 justify-end mt-4">
+
+            <div className="flex gap-3 justify-end mt-6">
               <button onClick={() => setIsExportModalOpen(false)} className="px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 rounded-xl cursor-pointer">Batal</button>
               <button onClick={exportLaporanOpname} className="flex items-center gap-2 px-5 py-2 text-sm font-bold text-white bg-[#00664b] hover:bg-[#00553e] rounded-xl shadow-md cursor-pointer"><Download size={16} /> Unduh Excel</button>
             </div>
