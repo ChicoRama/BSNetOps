@@ -13,10 +13,7 @@ export default function AdminDashboard({ role = 'admin' }) {
   const [categoryData, setCategoryData] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
 
-  // ==========================================
-  // 🔥 SUPABASE REALTIME DI-AKTIFKAN
-  // ==========================================
-  useEffect(() => {
+   useEffect(() => {
     fetchDashboardData();
 
     const dashboardChannel = supabase
@@ -40,13 +37,11 @@ export default function AdminDashboard({ role = 'admin' }) {
     if (!isBackground) setLoading(true);
 
     try {
-      // 🔥 1. Ambil Kategori Aktif dulu biar kategori baru terdaftar walau stok 0
       const { data: catData } = await supabase
         .from('categories')
         .select('name')
         .is('deleted_at', null);
 
-      // 🔥 2. Ambil data dari tabel 'items'
       const { data: itemsData, error: itemsError } = await supabase
         .from('items')
         .select('*')
@@ -57,14 +52,12 @@ export default function AdminDashboard({ role = 'admin' }) {
       let totalStock = 0;
       const categoryMap = {};
 
-      // Inisialisasi semua kategori dengan nilai 0
       if (catData) {
         catData.forEach(c => {
           categoryMap[c.name] = 0;
         });
       }
 
-      // Mulai hitung stok dari items
       if (itemsData) {
         itemsData.forEach(item => {
           const qty = parseInt(item.stock) || 0;
@@ -72,7 +65,6 @@ export default function AdminDashboard({ role = 'admin' }) {
 
           const cat = item.category && item.category !== '-' ? item.category : 'Lainnya';
           
-          // Kalau ada kategori dari barang lama yang nggak kedaftar, tambahin
           if (categoryMap[cat] === undefined) {
             categoryMap[cat] = 0;
           }
@@ -81,14 +73,16 @@ export default function AdminDashboard({ role = 'admin' }) {
 
         setTotalBarang(totalStock);
 
-        const formattedCategoryData = Object.keys(categoryMap).map(catName => ({
+        let formattedCategoryData = Object.keys(categoryMap).map(catName => ({
           name: catName,
           value: categoryMap[catName]
         }));
+
+        formattedCategoryData.sort((a, b) => b.value - a.value);
+
         setCategoryData(formattedCategoryData);
       }
 
-      // 🔥 3. Ambil data aktivitas
       const { data: logData, error: logError } = await supabase
         .from('activity_logs')
         .select('*')
@@ -96,7 +90,6 @@ export default function AdminDashboard({ role = 'admin' }) {
 
       if (logError) throw logError;
 
-      // 🔥 4. Ambil data requests untuk NAMA UNIT
       const { data: reqData } = await supabase
         .from('requests')
         .select('id, unit');
@@ -151,7 +144,6 @@ export default function AdminDashboard({ role = 'admin' }) {
         </div>
       </div>
 
-      {/* Statistik Card */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 border border-zinc-200/80 rounded-xl shadow-md transition-all hover:scale-[1.01]">
           <h3 className="text-zinc-500 text-sm font-medium">Total Barang Gudang</h3>
@@ -170,7 +162,6 @@ export default function AdminDashboard({ role = 'admin' }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Grafik Distribusi */}
         <div className="bg-white p-6 border border-zinc-200/80 rounded-xl shadow-md">
           <h2 className="text-lg font-semibold text-zinc-900 mb-4">Distribusi Kategori Aset</h2>
           <div className="h-64 w-full pt-4">
@@ -183,7 +174,7 @@ export default function AdminDashboard({ role = 'admin' }) {
                 <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                   <Pie data={categoryData} startAngle={180} endAngle={0} innerRadius={60} outerRadius={80} dataKey="value">
                     {categoryData.map((entry, index) => (
-                      <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip />
@@ -205,7 +196,6 @@ export default function AdminDashboard({ role = 'admin' }) {
           </div>
         </div>
 
-        {/* Tabel Aktivitas Terakhir */}
         <div className="bg-white p-6 border border-zinc-200/80 rounded-xl shadow-md overflow-hidden">
           <h2 className="text-lg font-semibold text-zinc-900 mb-4">Aktivitas Terakhir</h2>
           <div className="overflow-x-auto">

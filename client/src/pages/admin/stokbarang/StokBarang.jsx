@@ -368,10 +368,14 @@ export default function StokBarang({ role = 'admin' }) {
                         <button onClick={() => handleHardDelete(item)} className="p-1.5 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer"><XCircle size={14} /> Hapus Permanen</button>
                       </>
                     ) : (
-                      <>
-                        <button onClick={() => handleEditClick(item)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"><Edit3 size={18} /></button>
-                        <button onClick={() => handleSoftDelete(item)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"><Trash2 size={18} /></button>
-                      </>
+                        <>
+                          <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-blue-600 transition-colors cursor-pointer">
+                            <Edit3 size={16} strokeWidth={2} />
+                          </button>
+                          <button onClick={() => handleSoftDelete(item)} className="text-zinc-500 hover:text-red-600 transition-colors cursor-pointer">
+                            <Trash2 size={16} strokeWidth={2} />
+                          </button>
+                        </>
                     )}
                   </td>
                 )}
