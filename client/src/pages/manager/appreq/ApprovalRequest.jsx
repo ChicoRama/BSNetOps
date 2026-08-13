@@ -11,13 +11,11 @@ export default function ApprovalRequest() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Default tab di 'Semua'
-  const [activeTab, setActiveTab] = useState('Semua');
+  const [activeTab, setActiveTab] = useState('Menunggu Manager');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('Semua Prioritas');
   const [selectedRows, setSelectedRows] = useState([]);
 
-  // 🔥 State untuk Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
@@ -32,9 +30,6 @@ export default function ApprovalRequest() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
-  // ==========================================
-  // SUPABASE REALTIME DI-AKTIFKAN!
-  // ==========================================
   useEffect(() => {
     fetchRequestsFromSupabase();
 
@@ -115,7 +110,17 @@ export default function ApprovalRequest() {
             }))
           };
         });
-        setRequests(formattedData);
+
+        const filteredForManager = formattedData.filter(req => {
+          if (!req.status) return false;
+          const statusLower = req.status.toLowerCase();
+
+          return statusLower === 'menunggu manager' || 
+                 statusLower === 'selesai' || 
+                 statusLower === 'ditolak';
+        });
+
+        setRequests(filteredForManager);
       }
     } catch (error) {
       toast.error('Gagal memuat data permintaan dari database!');
@@ -125,7 +130,6 @@ export default function ApprovalRequest() {
     }
   };
 
-  // 🔥 Reset halaman ke-1 jika filter berubah
   useEffect(() => {
     setCurrentPage(1);
     setSelectedRows([]);
@@ -142,12 +146,10 @@ export default function ApprovalRequest() {
     return matchTab && matchPriority && matchSearch;
   });
 
-  // 🔥 Logika Pagination (Pembagian 5 Item per halaman)
   const totalPages = Math.ceil(filteredRequests.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRequests = filteredRequests.slice(startIndex, startIndex + itemsPerPage);
 
-  // Select all hanya menyeleksi data yang ada di halaman saat ini (Current Page)
   const selectableRequests = activeTab === 'Semua' 
     ? paginatedRequests.filter(r => r.status?.toLowerCase() === 'menunggu manager')
     : paginatedRequests;
@@ -637,7 +639,6 @@ export default function ApprovalRequest() {
         </div>
       )}
 
-      {/* MODAL KONFIRMASI CUSTOM */}
       {isConfirmOpen && confirmTargets.length > 0 && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 px-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-in zoom-in-95 duration-150 text-center">
@@ -684,7 +685,6 @@ export default function ApprovalRequest() {
         </div>
       )}
 
-      {/* MODAL PREVIEW BON */}
       {showBonPreview && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="bg-zinc-200 rounded-2xl shadow-2xl flex flex-col w-full max-w-4xl max-h-[95vh] overflow-hidden relative">
@@ -711,11 +711,9 @@ export default function ApprovalRequest() {
                 <TemplateDokumenA4 ref={printRef} formData={mappedFormData} daftarBarang={mappedDaftarBarang} />
               </div>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }
