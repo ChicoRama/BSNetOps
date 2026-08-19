@@ -1,0 +1,6 @@
+{
+	"appId": "com.inventorybsn.app",
+	"appName": "\u0017Inventory BSN",
+	"webDir": "dist",
+	"bundledWebRuntime": false
+}

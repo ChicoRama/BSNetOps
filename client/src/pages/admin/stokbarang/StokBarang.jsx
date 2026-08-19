@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit3, Trash2, Search, ArrowLeft, XCircle, AlertTriangle, RefreshCw, Download, Calendar, PackagePlus } from 'lucide-react';
+import { Plus, Edit3, Trash2, Search, ArrowLeft, XCircle, AlertTriangle, RefreshCw, Download, Calendar } from 'lucide-react';
 import TambahItem from './TambahItem';
 import EditItem from './EditItem';
 import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast';
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
+import { generateLaporanExcel } from './TemplateLaporanExcel';
 
 export default function StokBarang({ role = 'admin' }) {
   const isAdmin = role === 'admin';
@@ -21,15 +20,10 @@ export default function StokBarang({ role = 'admin' }) {
   const [categoryFilter, setCategoryFilter] = useState('Semua');
   const [sortOrder, setSortOrder] = useState('none');
 
-  // 🔥 State untuk Modal Export (Bulanan & Tahunan)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [exportType, setExportType] = useState('bulanan'); // 'bulanan' atau 'tahunan'
+  const [exportType, setExportType] = useState('bulanan'); 
   const [exportMonth, setExportMonth] = useState(new Date().getMonth()); 
   const [exportYear, setExportYear] = useState(new Date().getFullYear()); 
-
-  // 🔥 State untuk Modal Barang Masuk (Restock)
-  const [isRestockOpen, setIsRestockOpen] = useState(false);
-  const [restockData, setRestockData] = useState({ jumlah: '', keterangan: '' });
 
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
@@ -65,38 +59,6 @@ export default function StokBarang({ role = 'admin' }) {
   };
 
   const handleEditClick = (item) => { setSelectedItem(item); setIsEditOpen(true); };
-
-  const handleRestockClick = (item) => {
-    setSelectedItem(item);
-    setRestockData({ jumlah: '', keterangan: '' });
-    setIsRestockOpen(true);
-  };
-
-  const submitRestock = async () => {
-    if (!restockData.jumlah || restockData.jumlah <= 0) {
-      toast.error("Jumlah barang masuk harus lebih dari 0");
-      return;
-    }
-    const toastId = toast.loading('Memproses barang masuk...');
-    try {
-      const { error: insertError } = await supabase.from('stock_in').insert([{
-        kode_barang: selectedItem.id,
-        jumlah_masuk: Number(restockData.jumlah),
-        keterangan: restockData.keterangan || 'Restock'
-      }]);
-      if (insertError) throw insertError;
-
-      const stokBaru = Number(selectedItem.stock) + Number(restockData.jumlah);
-      const { error: updateError } = await supabase.from('items').update({ stock: stokBaru }).eq('id', selectedItem.id);
-      if (updateError) throw updateError;
-
-      toast.success('Stok berhasil ditambahkan!', { id: toastId });
-      setIsRestockOpen(false);
-      fetchItems(); 
-    } catch (error) {
-      toast.error(`Gagal: ${error.message}`, { id: toastId });
-    }
-  };
 
   const handleSoftDelete = async (item) => {
     try {
@@ -144,12 +106,12 @@ export default function StokBarang({ role = 'admin' }) {
     });
   };
 
-  // 🔥 FUNGSI EXPORT LAPORAN OPNAME (Mendukung Bulanan & Tahunan)
+  // 🔥 Fungsi Export Super Bersih
   const exportLaporanOpname = async () => {
     setIsExportModalOpen(false); 
     const toastId = toast.loading('Menyiapkan rekapitulasi stok yang cantik...');
+    
     try {
-      // Tentukan rentang waktu berdasarkan pilihan (Bulanan atau Tahunan)
       let startOfPeriod, endOfPeriod, namaPeriode;
 
       if (exportType === 'tahunan') {
@@ -162,7 +124,6 @@ export default function StokBarang({ role = 'admin' }) {
         namaPeriode = new Date(exportYear, exportMonth).toLocaleString('id-ID', { month: 'long', year: 'numeric' });
       }
 
-      // Ambil barang yang diinput sebelum/sama dengan akhir periode pilihan
       const validItems = items.filter(item => item.deleted_at === null && new Date(item.created_at) <= new Date(endOfPeriod));
 
       if (validItems.length === 0) {
@@ -170,15 +131,12 @@ export default function StokBarang({ role = 'admin' }) {
         return; 
       }
 
-      // 1. Ambil Data Keluar (Request Items)
       const { data: reqData } = await supabase.from('request_items').select(`kode_barang, jumlah_diminta, jumlah_disetujui, requests (status)`).gte('created_at', startOfPeriod).lte('created_at', endOfPeriod);
       const validReqData = reqData || [];
 
-      // 2. Ambil Data Masuk (Stock In)
       const { data: inData } = await supabase.from('stock_in').select('kode_barang, jumlah_masuk').gte('created_at', startOfPeriod).lte('created_at', endOfPeriod);
       const validInData = inData || [];
 
-      // 3. Kalkulasi per Barang
       const opnameData = validItems.map((item, index) => {
         const totalKeluar = validReqData.filter(r => r.kode_barang === item.id).reduce((sum, curr) => {
           const status = (curr.requests?.status || '').toLowerCase();
@@ -205,80 +163,9 @@ export default function StokBarang({ role = 'admin' }) {
         };
       });
 
-      // 4. Hitung Grand Total
-      const totalBaris = opnameData.length;
-      opnameData.push({
-        no: '', kode: '', nama: 'TOTAL KESELURUHAN', kategori: '',
-        awal: opnameData.reduce((s, i) => s + (Number(i.awal) || 0), 0),
-        masuk: opnameData.reduce((s, i) => s + (Number(i.masuk) || 0), 0),
-        keluar: opnameData.reduce((s, i) => s + (Number(i.keluar) || 0), 0),
-        akhir: opnameData.reduce((s, i) => s + (Number(i.akhir) || 0), 0),
-      });
+      // 🔥 Lempar data ke TemplateLaporanExcel yang sudah dibuat
+      await generateLaporanExcel(opnameData, namaPeriode, toastId);
 
-      // ==========================================
-      // 🎨 PROSES DESAIN MENGGUNAKAN EXCELJS
-      // ==========================================
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(`Rekap ${namaPeriode.replace('_', ' ')}`);
-
-      worksheet.columns = [
-        { header: 'No', key: 'no', width: 6 },
-        { header: 'Kode Barang', key: 'kode', width: 16 },
-        { header: 'Nama Barang', key: 'nama', width: 32 },
-        { header: 'Kategori', key: 'kategori', width: 22 },
-        { header: 'Stok Awal', key: 'awal', width: 15 },
-        { header: 'Barang Masuk', key: 'masuk', width: 16 },
-        { header: 'Barang Keluar', key: 'keluar', width: 16 },
-        { header: 'Stok Akhir', key: 'akhir', width: 15 }
-      ];
-
-      worksheet.addRows(opnameData);
-
-      // Desain Header
-      const headerRow = worksheet.getRow(1);
-      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }; 
-      headerRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF00664B' } 
-      };
-      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
-      headerRow.height = 25;
-
-      // Desain Seluruh Sel
-      worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-          cell.border = {
-            top: { style: 'thin' },
-            left: { style: 'thin' },
-            bottom: { style: 'thin' },
-            right: { style: 'thin' }
-          };
-          
-          if (rowNumber > 1) {
-            if (colNumber === 3) {
-              cell.alignment = { vertical: 'middle', horizontal: 'left' };
-            } else {
-              cell.alignment = { vertical: 'middle', horizontal: 'center' };
-            }
-          }
-        });
-      });
-
-      // Desain Baris Total
-      const lastRow = worksheet.getRow(totalBaris + 2); 
-      lastRow.font = { bold: true };
-      lastRow.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFFDE047' } 
-      };
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      saveAs(blob, `Laporan_Opname_${namaPeriode}.xlsx`);
-      
-      toast.success(`Laporan ${namaPeriode.replace('_', ' ')} berhasil diunduh!`, { id: toastId });
     } catch (error) { 
       toast.error(`Gagal: ${error.message}`, { id: toastId, duration: 6000 }); 
     }
@@ -296,32 +183,49 @@ export default function StokBarang({ role = 'admin' }) {
   const tahunList = Array.from({length: new Date().getFullYear() - 2025}, (_, i) => new Date().getFullYear() - i);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 relative">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-4 md:space-y-6 animate-in fade-in duration-300 relative px-2 md:px-0">
+      
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          {showTrash && <button onClick={() => setShowTrash(false)} className="p-2 bg-white border border-zinc-200 rounded-xl shadow-md text-[#00664b] hover:bg-emerald-50 transition-all cursor-pointer"><ArrowLeft size={18} /></button>}
+          {showTrash && (
+            <button 
+              onClick={() => setShowTrash(false)} 
+              className="p-2 bg-white border border-zinc-200 rounded-xl shadow-md text-[#00664b] hover:bg-emerald-50 transition-all cursor-pointer shrink-0"
+            >
+              <ArrowLeft size={18} />
+            </button>
+          )}
           <div>
-            <h2 className="text-xl font-bold text-white">Manajemen Stok & Inventaris</h2>
-            <p className="text-xs text-white/80 mt-0.5">{showTrash ? 'Daftar arsip barang' : 'Daftar logistik dan aset operasional'}</p>
+            <h2 className="text-xl md:text-2xl font-bold text-white">Manajemen Stok & Inventaris</h2>
+            <p className="text-[11px] md:text-xs text-white/80 mt-0.5">{showTrash ? 'Daftar arsip barang' : 'Daftar logistik dan aset operasional'}</p>
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 md:gap-3 w-full md:w-auto mt-2 md:mt-0">
           {isAdmin && !showTrash && (
-            <button onClick={() => setIsExportModalOpen(true)} className="flex items-center justify-center w-full sm:w-auto gap-2 px-4 py-2 bg-white text-[#00664b] border-2 border-[#00664b] rounded-xl text-sm font-semibold shadow-sm hover:bg-emerald-50 transition-all cursor-pointer">
+            <button 
+              onClick={() => setIsExportModalOpen(true)} 
+              className="flex items-center justify-center gap-2 px-3.5 py-2.5 bg-white text-[#00664b] border border-zinc-200 rounded-xl text-xs md:text-sm font-semibold shadow-sm hover:bg-emerald-50 transition-all cursor-pointer w-full sm:w-auto"
+            >
               <Download size={16} /> Laporan Opname
             </button>
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3 w-full sm:w-auto">
             {!showTrash && (
-              <button onClick={() => setShowTrash(true)} className="flex items-center gap-2 px-4 py-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-sm font-semibold hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer">
+              <button 
+                onClick={() => setShowTrash(true)} 
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 p-2.5 bg-white text-zinc-700 border border-zinc-200 rounded-xl text-xs md:text-sm font-semibold hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer shadow-sm"
+              >
                 <Trash2 size={16} />
               </button>
             )}
             
             {isAdmin && !showTrash && (
-              <button onClick={() => setIsAddOpen(true)} className="flex items-center gap-2 bg-[#00664b] text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md hover:bg-[#00553e] transition-all cursor-pointer">
+              <button 
+                onClick={() => setIsAddOpen(true)} 
+                className="flex-[2] sm:flex-none flex items-center justify-center gap-2 bg-[#00664b] text-white px-3.5 md:px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold shadow-md hover:bg-[#00553e] transition-all cursor-pointer"
+              >
                 <Plus size={16} /> Tambah Item Baru
               </button>
             )}
@@ -330,121 +234,159 @@ export default function StokBarang({ role = 'admin' }) {
       </div>
 
       {/* Pencarian */}
-      <div className="flex bg-white p-4 rounded-xl shadow-md border border-zinc-200/80">
+      <div className="flex bg-white p-3 md:p-4 rounded-xl shadow-md border border-zinc-200/80">
         <div className="flex-1 relative flex items-center">
           <Search size={18} className="absolute left-3 text-zinc-400" />
-          <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Cari berdasarkan kode atau nama barang..." className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-colors"/>
+          <input 
+            type="text" 
+            value={searchQuery} 
+            onChange={(e) => setSearchQuery(e.target.value)} 
+            placeholder="Cari berdasarkan kode atau nama barang..." 
+            className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs md:text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-colors"
+          />
         </div>
       </div>
 
       {/* Tabel */}
       <div className="bg-white border border-zinc-200 rounded-xl shadow-md overflow-hidden">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-[#58a27d] text-white text-xs uppercase font-semibold">
-            <tr>
-              <th className="p-4">Kode</th>
-              <th className="p-4">Nama Barang</th>
-              <th className="p-4">Kategori</th>
-              <th className="p-4">Stok</th>
-              <th className="p-4">Tanggal Masuk</th>
-              {isAdmin && <th className="p-4 text-right">Aksi</th>}
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {loading ? <tr><td colSpan={6} className="p-12 text-center text-zinc-400 font-medium">Memuat data...</td></tr> : 
-             processedItems.length === 0 ? <tr><td colSpan={6} className="p-12 text-center text-zinc-400 font-medium">Tidak ditemukan data.</td></tr> : 
-             processedItems.map((item) => (
-              <tr key={item.id} className="hover:bg-zinc-50/40">
-                <td className="p-4 font-mono font-bold text-zinc-900">{item.id}</td>
-                <td className="p-4 font-semibold text-zinc-900">{item.name}</td>
-                <td className="p-4 text-zinc-600">{item.category}</td>
-                <td className="p-4 font-bold">{item.stock} Unit</td>
-                <td className="p-4 text-zinc-600">{formatDate(item.date)}</td>
-                {isAdmin && (
-                  <td className="p-4 text-right space-x-2 flex justify-end gap-1">
-                    {showTrash ? (
-                      <>
-                        <button onClick={() => handleRestore(item.id)} className="p-1.5 text-amber-600 hover:bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer"><RefreshCw size={14} /> Restore</button>
-                        <button onClick={() => handleHardDelete(item)} className="p-1.5 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-xs font-semibold cursor-pointer"><XCircle size={14} /> Hapus Permanen</button>
-                      </>
-                    ) : (
-                        <>
-                          <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-blue-600 transition-colors cursor-pointer">
-                            <Edit3 size={16} strokeWidth={2} />
-                          </button>
-                          <button onClick={() => handleSoftDelete(item)} className="text-zinc-500 hover:text-red-600 transition-colors cursor-pointer">
-                            <Trash2 size={16} strokeWidth={2} />
-                          </button>
-                        </>
-                    )}
-                  </td>
-                )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs md:text-sm text-left min-w-[700px]">
+            <thead className="bg-[#58a27d] text-white text-[10px] md:text-xs uppercase font-semibold tracking-wider">
+              <tr>
+                <th className="p-3.5 md:p-4">Kode</th>
+                <th className="p-3.5 md:p-4">Nama Barang</th>
+                <th className="p-3.5 md:p-4">Kategori</th>
+                <th className="p-3.5 md:p-4">Stok</th>
+                <th className="p-3.5 md:p-4">Tanggal Masuk</th>
+                {isAdmin && <th className="p-3.5 md:p-4 text-right">Aksi</th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-zinc-100">
+              {loading ? (
+                <tr><td colSpan={6} className="p-12 text-center text-zinc-400 font-medium">Memuat data...</td></tr>
+              ) : processedItems.length === 0 ? (
+                <tr><td colSpan={6} className="p-12 text-center text-zinc-400 font-medium">Tidak ditemukan data.</td></tr>
+              ) : (
+                processedItems.map((item) => (
+                  <tr key={item.id} className="hover:bg-zinc-50/40 transition-colors">
+                    <td className="p-3.5 md:p-4 font-mono font-bold text-zinc-900">{item.id}</td>
+                    <td className="p-3.5 md:p-4 font-semibold text-zinc-900">{item.name}</td>
+                    <td className="p-3.5 md:p-4 text-zinc-600">{item.category}</td>
+                    <td className="p-3.5 md:p-4 font-bold">{item.stock} Unit</td>
+                    <td className="p-3.5 md:p-4 text-zinc-600">{formatDate(item.date)}</td>
+                    {isAdmin && (
+                      <td className="p-3.5 md:p-4 text-right space-x-2 flex justify-end gap-1.5">
+                        {showTrash ? (
+                          <>
+                            <button onClick={() => handleRestore(item.id)} className="px-2.5 py-1 text-amber-600 hover:bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-1 text-[10px] md:text-xs font-semibold cursor-pointer transition-colors"><RefreshCw size={13} /> Restore</button>
+                            <button onClick={() => handleHardDelete(item)} className="px-2.5 py-1 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg flex items-center gap-1 text-[10px] md:text-xs font-semibold cursor-pointer transition-colors"><XCircle size={13} /> Hapus</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => handleEditClick(item)} className="p-1.5 text-zinc-500 hover:text-blue-600 transition-colors cursor-pointer bg-zinc-50 hover:bg-blue-50 rounded-lg" title="Edit">
+                              <Edit3 size={16} />
+                            </button>
+                            <button onClick={() => handleSoftDelete(item)} className="p-1.5 text-zinc-500 hover:text-red-600 transition-colors cursor-pointer bg-zinc-50 hover:bg-red-50 rounded-lg" title="Arsip ke Trash">
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* MODAL PILIH PERIODE EXPORT (BULANAN / TAHUNAN) */}
+      {/* MODAL PILIH PERIODE EXPORT */}
       {isExportModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-5 md:p-6 animate-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center"><Calendar size={20} /></div>
-              <div><h3 className="text-lg font-bold text-zinc-900">Pilih Periode Laporan</h3><p className="text-xs text-zinc-500">Rekapitulasi masuk & keluar.</p></div>
+              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0"><Calendar size={20} /></div>
+              <div><h3 className="text-base md:text-lg font-bold text-zinc-900">Pilih Periode Laporan</h3><p className="text-[11px] md:text-xs text-zinc-500">Rekapitulasi masuk & keluar.</p></div>
             </div>
 
             <div className="space-y-4 my-4">
-              {/* Pilihan Jenis Rekap (Bulanan / Tahunan) */}
               <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Jenis Rekap</label>
+                <label className="block text-xs font-semibold text-zinc-700 mb-1.5">Jenis Rekap</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <button 
+                  <button
                     type="button" 
-                    onClick={() => setExportType('bulanan')}
-                    className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${exportType === 'bulanan' ? 'bg-[#00664b] text-white border-[#00664b]' : 'bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100'}`}
+                    onClick={() => setExportType('bulanan')} 
+                    className={`py-2 text-[11px] md:text-xs font-bold rounded-xl border transition-all cursor-pointer ${exportType === 'bulanan' ? 'bg-[#00664b] text-white border-[#00664b]' : 'bg-zinc-50 text-zinc-600 border-zinc-200'}`}
                   >
                     Bulanan
                   </button>
                   <button 
                     type="button" 
-                    onClick={() => setExportType('tahunan')}
-                    className={`py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${exportType === 'tahunan' ? 'bg-[#00664b] text-white border-[#00664b]' : 'bg-zinc-50 text-zinc-600 border-zinc-200 hover:bg-zinc-100'}`}
+                    onClick={() => setExportType('tahunan')} 
+                    className={`py-2 text-[11px] md:text-xs font-bold rounded-xl border transition-all cursor-pointer ${exportType === 'tahunan' ? 'bg-[#00664b] text-white border-[#00664b]' : 'bg-zinc-50 text-zinc-600 border-zinc-200'}`}
                   >
                     Tahunan (Per Tahun)
                   </button>
                 </div>
               </div>
 
-              {/* Pilihan Bulan (Hanya muncul jika jenis bulanan) */}
               {exportType === 'bulanan' && (
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Bulan</label>
-                  <select value={exportMonth} onChange={(e) => setExportMonth(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]">
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1.5">Bulan</label>
+                  <select value={exportMonth} onChange={(e) => setExportMonth(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs md:text-sm focus:outline-none focus:border-[#00664b]">
                     {bulanList.map((bulan, i) => <option key={i} value={i}>{bulan}</option>)}
                   </select>
                 </div>
               )}
 
-              {/* Pilihan Tahun */}
               <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Tahun</label>
-                <select value={exportYear} onChange={(e) => setExportYear(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]">
+                <label className="block text-xs font-semibold text-zinc-700 mb-1.5">Tahun</label>
+                <select value={exportYear} onChange={(e) => setExportYear(Number(e.target.value))} className="w-full p-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs md:text-sm focus:outline-none focus:border-[#00664b]">
                   {tahunList.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
             </div>
 
-            <div className="flex gap-3 justify-end mt-6">
-              <button onClick={() => setIsExportModalOpen(false)} className="px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 rounded-xl cursor-pointer">Batal</button>
-              <button onClick={exportLaporanOpname} className="flex items-center gap-2 px-5 py-2 text-sm font-bold text-white bg-[#00664b] hover:bg-[#00553e] rounded-xl shadow-md cursor-pointer"><Download size={16} /> Unduh Excel</button>
+            <div className="flex gap-2.5 justify-end mt-6 pt-4 border-t border-zinc-100">
+              <button onClick={() => setIsExportModalOpen(false)} className="px-4 py-2 text-xs md:text-sm text-zinc-600 font-semibold hover:bg-zinc-100 rounded-xl cursor-pointer transition-colors">Batal</button>
+              <button onClick={exportLaporanOpname} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 md:px-5 py-2 text-xs md:text-sm font-bold text-white bg-[#00664b] hover:bg-[#00553e] rounded-xl shadow-md cursor-pointer transition-colors"><Download size={15} /> Unduh Excel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Delete/Add/Edit */}
-      {confirmModal.isOpen && ( <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200"><div className="bg-white w-full max-w-sm p-6 rounded-2xl animate-in zoom-in-95 duration-200"><h3 className="font-bold text-lg">{confirmModal.title}</h3><p className="text-sm mt-2">{confirmModal.message}</p><div className="flex justify-end gap-2 mt-4"><button onClick={() => setConfirmModal({isOpen:false})} className="px-4 py-2 rounded-lg bg-zinc-200 cursor-pointer">Batal</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 rounded-lg bg-red-600 text-white cursor-pointer">Ya</button></div></div></div> )}
+      {/* MODAL KONFIRMASI MODERN */}
+      {confirmModal.isOpen && ( 
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-zinc-200 overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-5 md:p-6 text-center space-y-3">
+              <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${confirmModal.type === 'danger' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-base md:text-lg font-bold text-zinc-900">{confirmModal.title}</h3>
+              <p className="text-xs text-zinc-500 leading-relaxed px-2">{confirmModal.message}</p>
+            </div>
+            <div className="px-5 md:px-6 py-3.5 md:py-4 bg-zinc-50 border-t border-zinc-100 flex gap-3 justify-end">
+              <button 
+                onClick={() => setConfirmModal({isOpen:false})} 
+                className="px-4 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-200/60 rounded-xl transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={confirmModal.onConfirm} 
+                className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-md transition-all active:scale-95 cursor-pointer ${
+                  confirmModal.type === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-[#00664b] hover:bg-[#00553e]'
+                }`}
+              >
+                Ya, Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div> 
+      )}
+      
       {isAddOpen && <TambahItem onClose={() => setIsAddOpen(false)} onSuccess={() => { setIsAddOpen(false); fetchItems(); }} />}
       {isEditOpen && <EditItem itemData={selectedItem} onClose={() => setIsEditOpen(false)} onSuccess={() => { setIsEditOpen(false); fetchItems(); }} />}
     </div>
