@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
 import { supabase } from '../supabaseClient.js';
 
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import ResetPassword from './pages/ResetPassword.jsx';
+import RegisterPage from "./pages/RegisterPage"; // Boleh dihapus kalau file-nya udah dibuang
+import ResetPassword from './pages/ResetPassword.jsx'; // 👈 Nanti halaman ini dimodif dikit untuk melayani ganti password paksa
 
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
@@ -32,17 +31,22 @@ import RiwayatPermintaan from './pages/user/riwayat/RiwayatPermintaan';
 
 // =====================================================================
 // 🔒 KOMPONEN PROTEKSI RUTE (ROUTE GUARD)
-// Memastikan hanya role yang diizinkan yang bisa mengakses rute tertentu
 // =====================================================================
 const ProtectedRoute = ({ allowedRoles }) => {
   const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
   
-  // Jika tidak ada user yang login sama sekali, tendang ke halaman login
+  // 1. Jika tidak ada user yang login sama sekali
   if (!activeUser) {
     return <Navigate to="/login" replace />;
   }
 
-  // 🔥 UPDATE: Cari role dari berbagai kemungkinan key yang ada di database/localStorage
+  // 🔥 2. CEK FIRST LOGIN: Jika ini login pertama, PAKSA ganti password!
+  // Pastikan saat login, data is_first_login dari Supabase ikut tersimpan di localStorage
+  if (activeUser.is_first_login === true) {
+    return <Navigate to="/reset-password" replace state={{ forceReset: true }} />;
+  }
+
+  // 3. Cek Role Validasi
   const userRole = (
     activeUser.role || 
     activeUser.jabatan || 
@@ -52,12 +56,11 @@ const ProtectedRoute = ({ allowedRoles }) => {
     'user'
   ).toLowerCase();
 
-  // Jika role user saat ini ada di dalam daftar allowedRoles, izinkan masuk (Outlet)
   if (allowedRoles.includes(userRole)) {
     return <Outlet />;
   }
 
-  // Jika rolenya TIDAK SESUAI (misal user mau ke /admin), kembalikan ke dashboard masing-masing
+  // 4. Jika nyasar beda role
   if (userRole === 'admin' || userRole === 'head unit') {
     return <Navigate to="/admin" replace />;
   } else if (userRole === 'manager') {
@@ -74,34 +77,21 @@ function DashboardLayout({ role, currentView, setCurrentView, children }) {
     localStorage.setItem('sidebarOpen', JSON.stringify(isOpen)); 
   }, [isOpen]);
 
-  // =========================================================
-  // 🔥 TAMBAHAN BARU: SISTEM AUTO-CORRECT STATE YANG NYANGKUT
-  // =========================================================
   useEffect(() => {
-    // Daftar menu yang valid untuk masing-masing role
     const validViews = {
       admin: ['dashboard', 'stok-barang', 'manajemen-user', 'kategori-barang', 'log-aktifitas', 'edit-profil', 'penyetujuan-barang'],
       manager: ['dashboard', 'approval-request', 'edit-profil', 'activity-log'],
       user: ['dashboard', 'aset', 'ajukan-permintaan', 'riwayat-permintaan', 'edit-profil']
     };
 
-    // Jika nilai currentView saat ini TIDAK ADA di dalam daftar menu role tersebut,
-    // paksa reset tampilannya kembali ke 'dashboard'
     if (validViews[role] && !validViews[role].includes(currentView)) {
       setCurrentView('dashboard');
     }
   }, [role, currentView, setCurrentView]);
-  // =========================================================
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-50 select-none">
-      <Sidebar 
-        role={role} 
-        isOpen={isOpen} 
-        setIsOpen={setIsOpen} 
-        currentView={currentView} 
-        setCurrentView={setCurrentView} 
-      />
+      <Sidebar role={role} isOpen={isOpen} setIsOpen={setIsOpen} currentView={currentView} setCurrentView={setCurrentView} />
       <div className="flex-1 h-screen flex flex-col overflow-hidden bg-gradient-to-b from-[#00664b]/90 via-zinc-70 to-zinc-30">
         <Header isOpen={isOpen} setIsOpen={setIsOpen} role={role} />
         <main className="flex-1 p-8 overflow-y-auto animate-in fade-in duration-700">
@@ -123,11 +113,7 @@ export default function App() {
         position="top-center" 
         toastOptions={{
           duration: 1000,
-          style: {
-            background: '#ffffff',
-            color: '#272626',
-            borderRadius: '10px',
-          },
+          style: { background: '#ffffff', color: '#272626', borderRadius: '10px' },
         }} 
       />
 
@@ -135,11 +121,9 @@ export default function App() {
         {/* ================= ROUTE PUBLIK ================= */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* ================= ROUTE ROLE: ADMIN ================= */}
-        {/* 🔒 Hanya bisa diakses oleh 'admin' atau 'head unit' */}
         <Route element={<ProtectedRoute allowedRoles={['admin', 'head unit']} />}>
           <Route path="/admin" element={
             <DashboardLayout role="admin" currentView={currentView} setCurrentView={setCurrentView}>
@@ -155,7 +139,6 @@ export default function App() {
         </Route>
 
         {/* ================= ROUTE ROLE: MANAGER ================= */}
-        {/* 🔒 Hanya bisa diakses oleh 'manager' */}
         <Route element={<ProtectedRoute allowedRoles={['manager']} />}>
           <Route path="/manager" element={
             <DashboardLayout role="manager" currentView={currentView} setCurrentView={setCurrentView}>
@@ -168,13 +151,10 @@ export default function App() {
         </Route>
 
         {/* ================= ROUTE ROLE: USER ================= */}
-        {/* 🔒 Hanya bisa diakses oleh 'user' */}
         <Route element={<ProtectedRoute allowedRoles={['user']} />}>
           <Route path="/user" element={
             <DashboardLayout role="user" currentView={currentView} setCurrentView={setCurrentView}>
-              {/* 💡 FIX: setCurrentView dioper ke UserDashboard agar tombol Aksi Cepat bisa diklik */}
               {currentView === 'dashboard' && <UserDashboard setCurrentView={setCurrentView} />}
-              
               {currentView === 'aset' && <Aset setCurrentView={setCurrentView} />}
               {currentView === 'ajukan-permintaan' && <AjukanPermintaan />}
               {currentView === 'riwayat-permintaan' && <RiwayatPermintaan />}
@@ -183,7 +163,6 @@ export default function App() {
           } />
         </Route>
 
-        {/* Jika mengetik URL asal-asalan, kembalikan ke landing page */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppRouter>

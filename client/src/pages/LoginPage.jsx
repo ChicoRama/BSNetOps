@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FaXmark, FaEye, FaEyeSlash } from "react-icons/fa6";
-import { useNavigate, Link } from "react-router-dom"; 
+import { useNavigate } from "react-router-dom"; 
 import { supabase } from "../../supabaseClient"; 
 import toast from "react-hot-toast"; 
 
@@ -44,6 +44,26 @@ export default function LoginPage() {
     });
   };
 
+  // 🔥 FUNGSI BARU: Pencatat Jejak Digital (Audit Trail)
+  const catatLogin = async (email, userId) => {
+    try {
+      // Ambil IP Address publik user
+      const response = await fetch('https://api.ipify.org?format=json');
+      const data = await response.json();
+      const ip = data.ip;
+
+      // Simpan ke tabel login_logs di Supabase
+      await supabase.from('login_logs').insert([{
+        email: email,
+        user_id: userId,
+        ip_address: ip,
+        user_agent: navigator.userAgent // Info browser/device user (Chrome, Safari, HP, dll)
+      }]);
+    } catch (err) {
+      console.error("Gagal mencatat log login (bukan error fatal):", err);
+    }
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     if (isLoading) return; 
@@ -60,7 +80,7 @@ export default function LoginPage() {
     const inputEmail = form.username.trim().toLowerCase();
 
     try {
-      // 🔥 1. LOGIN DULU KE SUPABASE AUTH (Biar sistem kenal siapa kita)
+      // 1. LOGIN KE SUPABASE AUTH
       const { data: authData, error: supabaseError } = await supabase.auth.signInWithPassword({
         email: inputEmail, 
         password: form.password,
@@ -72,16 +92,15 @@ export default function LoginPage() {
         return;
       }
 
-      // 🔥 2. SETELAH BERHASIL LOGIN, BARU AMBIL DATA ROLE DI TABEL (Pasti diizinkan oleh database)
+      // 2. AMBIL DATA ROLE & STATUS FIRST LOGIN DI TABEL
       const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
-        .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon')
-        .ilike('email', inputEmail) // Pakai ilike agar tidak sensitif huruf besar/kecil
+        .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon, is_first_login')
+        .ilike('email', inputEmail)
         .maybeSingle(); 
 
-      // 🔥 3. CEK APAKAH AKUN DITANGGUHKAN
+      // 3. CEK APAKAH AKUN DITANGGUHKAN
       if (roleData && roleData.is_suspended === true) {
-        // Keluarkan (logout) paksa karena dia disuspend
         await supabase.auth.signOut();
         
         toast.error(
@@ -119,15 +138,22 @@ export default function LoginPage() {
           namaLengkap: roleData?.nama_lengkap || inputEmail.split('@')[0],
           nipPegawai: roleData?.staff_id || "",
           divisi: roleData?.unit || "",
-          role: userRole,     
+          role: userRole,    
           jabatan: roleData?.jabatan || userRole,  
-          noTelepon: roleData?.no_telepon || ""
+          noTelepon: roleData?.no_telepon || "",
+          is_first_login: roleData?.is_first_login ?? false // Merekam status ganti password wajib
         };
         localStorage.setItem("userProfile", JSON.stringify(profileInfo));
+
+        // 🔥 PANGGIL FUNGSI PENCATAT LOG DI SINI KARENA LOGIN SUDAH SUKSES
+        await catatLogin(inputEmail, authData.user?.id);
       }
 
-      // 6. ARAHKAN KE DASHBOARD SESUAI ROLE
-      if (userRole === "admin" || userRole === "head unit") {
+      // 6. ARAHKAN KE DASHBOARD ATAU LEMPAR KE HALAMAN RESET PASSWORD
+      if (roleData?.is_first_login === true) {
+        toast.success("Akun baru terdeteksi. Silakan ubah password Anda.", { duration: 4000 });
+        navigate("/reset-password", { state: { forceReset: true } });
+      } else if (userRole === "admin" || userRole === "head unit") {
         navigate("/admin");
       } else if (userRole === "manager") {
         navigate("/manager");
@@ -176,7 +202,6 @@ export default function LoginPage() {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-100 text-slate-900">
-
       {/* BACKGROUND */}
       <div
         className="absolute inset-0 scale-105 bg-cover bg-center blur-sm"
@@ -295,17 +320,6 @@ export default function LoginPage() {
               </button>
 
             </form>
-
-            <p className="mt-6 text-center text-sm text-slate-500">
-            Belum punya akun?{" "}
-            <Link
-                to="/register"
-                className="font-bold text-[#00634b] hover:underline cursor-pointer"
-            >
-                Daftar Sekarang
-            </Link>
-            </p>
-
           </div>
         </section>
       )}

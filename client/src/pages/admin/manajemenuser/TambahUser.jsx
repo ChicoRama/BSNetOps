@@ -7,10 +7,9 @@ export default function TambahUser({ onClose, onSuccess }) {
   const [formData, setFormData] = useState({ 
     name: '', 
     email: '', 
-    password: '',
     staff_id: `BSN-${Math.floor(100 + Math.random() * 900)}`, 
     unit: '', 
-    role: 'Staff', 
+    role: 'User', // 👈 Defaultnya sekarang User
     status: 'Aktif' 
   });
   
@@ -23,37 +22,36 @@ export default function TambahUser({ onClose, onSuccess }) {
     const toastId = toast.loading('Mendaftarkan user baru...');
 
     try {
-      // 1. Daftarkan ke sistem Autentikasi
+      // 1. Daftarkan ke sistem Auth dengan password hardcode "12345678"
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
-        password: formData.password,
+        password: '12345678', 
       });
 
-      // Kalau email sudah terdaftar di sistem Auth, dia akan terlempar ke sini
       if (authError) throw authError;
 
       const isSuspended = formData.status === 'Suspend';
       const finalStaffId = formData.staff_id || `BSN-${Math.floor(100 + Math.random() * 900)}`;
 
-      // 🔥 2. UBAH JADI UPSERT (Update or Insert)
-      // Kalau sistem DB udah otomatis bikin datanya, kita timpa. Kalau belum, kita insert.
+      // 2. Insert data profil + set is_first_login = true
       const { error: dbError } = await supabase
         .from('user_roles')
         .upsert([
           {
-            id: authData.user?.id, // 📍 Sambungkan langsung dengan ID Auth Supabase
+            id: authData.user?.id, 
             staff_id: finalStaffId,
             username: formData.name,
             email: formData.email,
-            role: formData.role.toLowerCase(),
+            role: formData.role.toLowerCase(), // Akan otomatis jadi 'user', 'manager', atau 'admin'
             unit: formData.unit,
-            is_suspended: isSuspended
+            is_suspended: isSuspended,
+            is_first_login: true 
           }
-        ], { onConflict: 'email' }); // 📍 KUNCI SOLUSI: Patokan penimpanya adalah kolom email
+        ], { onConflict: 'email' }); 
 
       if (dbError) throw dbError;
 
-      toast.success(`User baru dengan ID ${finalStaffId} berhasil didaftarkan.`, { id: toastId });
+      toast.success(`User baru dengan ID ${finalStaffId} berhasil didaftarkan. Password: 12345678`, { id: toastId, duration: 4000 });
       
       if (onSuccess) onSuccess(); 
       onClose(); 
@@ -61,7 +59,6 @@ export default function TambahUser({ onClose, onSuccess }) {
     } catch (error) {
       console.error('Gagal mendaftarkan user baru:', error.message);
       
-      // 🔥 Bikin pesan error-nya lebih gampang dibaca manusia
       let errorMessage = error.message;
       if (errorMessage.includes('duplicate key') || errorMessage.includes('unique constraint')) {
         errorMessage = 'Data nyangkut! Email ini sudah tercatat di database.';
@@ -82,7 +79,7 @@ export default function TambahUser({ onClose, onSuccess }) {
         <div className="p-5 border-b flex justify-between items-center bg-zinc-50/50">
           <div>
             <h3 className="text-lg font-bold text-zinc-950">Daftarkan User Baru</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">Berikan otorisasi masuk sistem logistik kepada pegawai baru</p>
+            <p className="text-xs text-zinc-500 mt-0.5">Password default akun adalah <span className="font-mono font-bold text-red-500 bg-red-50 px-1 rounded">12345678</span></p>
           </div>
           <button onClick={onClose} className="p-1.5 hover:bg-zinc-200/70 text-zinc-400 hover:text-zinc-600 rounded-lg transition-all cursor-pointer">
             <X size={18} />
@@ -110,19 +107,7 @@ export default function TambahUser({ onClose, onSuccess }) {
               required 
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="admin@bsn.go.id" 
-              className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-all" 
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-zinc-700 mb-1">Password Awal</label>
-            <input 
-              type="password" 
-              required 
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              placeholder="••••••••••" 
+              placeholder="xxxx@gmail.com" 
               className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-all" 
             />
           </div>
@@ -136,7 +121,7 @@ export default function TambahUser({ onClose, onSuccess }) {
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                 className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer transition-all"
               >
-                <option value="Staff">Staff</option>
+                <option value="User">User</option>
                 <option value="Manager">Manager</option>
                 <option value="Admin">Admin</option>
               </select>

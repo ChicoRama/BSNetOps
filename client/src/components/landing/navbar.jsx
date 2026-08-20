@@ -21,15 +21,6 @@ export default function Navbar() {
           <span className="absolute -inset-1.5 -z-10 rounded-xl bg-[#00634b]/0 blur-sm transition-all duration-300 group-hover:bg-[#00634b]/20" />
           Sign In
         </Link>
-
-        {/* Ubah a href menjadi Link to */}
-        <Link
-          to="/register"
-          className="group relative rounded-lg bg-[#00634b] px-5 py-3 text-sm font-semibold text-white shadow-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#004d3a] hover:shadow-xl active:translate-y-0 active:scale-95"
-        >
-          <span className="absolute -inset-1.5 -z-10 rounded-xl bg-[#00634b]/0 blur-sm transition-all duration-300 group-hover:bg-[#00634b]/20" />
-          Sign Up
-        </Link>
       </div>
     </header>
   );
