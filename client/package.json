@@ -34,6 +34,7 @@
     "electron-builder": "^26.15.3",
     "oxlint": "^1.69.0",
     "postcss": "^8.5.16",
+    "supabase": "^2.115.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.1.0",
     "vite-plugin-electron": "^1.1.0"
