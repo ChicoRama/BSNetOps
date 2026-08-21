@@ -8,7 +8,6 @@ export default function TambahUser({ onClose, onSuccess }) {
   const [activeTab, setActiveTab] = useState('manual'); 
   const [formData, setFormData] = useState({ 
     name: '', 
-    email: '', 
     unit: '', 
     role: 'User', 
     status: 'Aktif' 
@@ -25,11 +24,16 @@ export default function TambahUser({ onClose, onSuccess }) {
     const toastId = toast.loading('Mendaftarkan user baru...');
 
     try {
+      // 🔥 TRIK NINJA: Membuat Email Siluman (Dummy)
+      // Contoh: "Joko Kendil" -> "jokokendil@bsn.local"
+      const rawName = formData.name || 'user';
+      const dummyEmail = `${rawName.toLowerCase().replace(/[^a-z0-9]/g, '')}@bsn.local`;
+
       const { data: responseData, error: functionError } = await supabase.functions.invoke('import-users', {
         body: { 
           users: [{
             name: formData.name,
-            email: formData.email,
+            email: dummyEmail, // <-- Email siluman dikirim ke Supabase
             role: formData.role,
             unit: formData.unit,
             status: formData.status
@@ -39,7 +43,7 @@ export default function TambahUser({ onClose, onSuccess }) {
 
       if (functionError) throw functionError;
       if (responseData.results[0].status === 'Gagal') {
-        throw new Error(responseData.results[0].error || "Email sudah terdaftar");
+        throw new Error(responseData.results[0].error || "Nama ini sudah terdaftar di sistem!");
       }
 
       toast.success(`User berhasil didaftarkan. Password: 12345678`, { id: toastId, duration: 4000 });
@@ -54,9 +58,8 @@ export default function TambahUser({ onClose, onSuccess }) {
 
   const guessColumn = (headerName) => {
     const text = headerName.toLowerCase().replace(/[^a-z0-9]/g, ''); 
-    if (text.includes('mail') || text.includes('surel')) return 'email';
+    // 🔥 Pengecekan email udah dihapus total dari otak AI
     if (text.includes('nama') || text.includes('name') || text.includes('lengkap')) return 'name';
-    // 🔥 PERBAIKAN: Udah ditambahin kata kunci 'akses' dan 'level' di sini!
     if (text.includes('role') || text.includes('peran') || text.includes('hakakses') || text.includes('jabatan') || text.includes('akses') || text.includes('level')) return 'role';
     if (text.includes('unit') || text.includes('divisi') || text.includes('cabang')) return 'unit';
     return null; 
@@ -102,8 +105,9 @@ export default function TambahUser({ onClose, onSuccess }) {
   };
 
   const executeImport = async () => {
-    if (!aiMapping.email) {
-      toast.error("Kolom Email tidak terdeteksi di Excel Anda!");
+    // 🔥 Sekarang yang WAJIB itu NAMA, bukan Email lagi
+    if (!aiMapping.name) {
+      toast.error("Kolom 'Nama Lengkap' tidak terdeteksi di Excel Anda!");
       return;
     }
 
@@ -111,13 +115,21 @@ export default function TambahUser({ onClose, onSuccess }) {
     const toastId = toast.loading("Memproses Dokumen");
 
     try {
-      const formattedUsers = rawExcelData.map(row => ({
-        email: row[aiMapping.email],
-        name: aiMapping.name ? row[aiMapping.name] : row[aiMapping.email].split('@')[0],
-        role: aiMapping.role ? row[aiMapping.role] : 'User',
-        unit: aiMapping.unit ? row[aiMapping.unit] : 'Belum Ditentukan',
-        status: 'Aktif' 
-      }));
+      const formattedUsers = rawExcelData.map(row => {
+        // Ambil nama asli dari Excel
+        const rawName = row[aiMapping.name];
+        
+        // 🔥 TRIK NINJA: Membuat Email Siluman untuk tiap baris Excel
+        const dummyEmail = `${rawName.toLowerCase().replace(/[^a-z0-9]/g, '')}@bsn.local`;
+
+        return {
+          email: dummyEmail, // <-- Email siluman disisipkan otomatis
+          name: rawName,
+          role: aiMapping.role ? row[aiMapping.role] : 'User',
+          unit: aiMapping.unit ? row[aiMapping.unit] : 'Belum Ditentukan',
+          status: 'Aktif' 
+        };
+      });
 
       const { data: responseData, error: functionError } = await supabase.functions.invoke('import-users', {
         body: { users: formattedUsers }
@@ -177,19 +189,7 @@ export default function TambahUser({ onClose, onSuccess }) {
                   required 
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Contoh: Budi Setiawan" 
-                  className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-all" 
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 mb-1">Email Resmi BSN</label>
-                <input 
-                  type="email" 
-                  required 
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="xxxx@gmail.com" 
+                  placeholder="Contoh: Joko Kendil" 
                   className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-all" 
                 />
               </div>
@@ -252,7 +252,7 @@ export default function TambahUser({ onClose, onSuccess }) {
                   </div>
                   <h4 className="font-bold text-zinc-800 mb-2">Upload Data Bebas</h4>
                   <p className="text-xs text-zinc-500 mb-6">
-                    Sistem <b>Smart-Mapping</b> otomatis mendeteksi kolom Nama, Email, Unit, dan Hak Akses dari file Excel Anda. ID BSN akan di-generate otomatis.
+                    Sistem <b>Smart-Mapping</b> otomatis mendeteksi kolom Nama, Unit, dan Hak Akses dari file Excel Anda. ID BSN akan di-generate otomatis.
                   </p>
                   
                   <label className={`
@@ -282,8 +282,7 @@ export default function TambahUser({ onClose, onSuccess }) {
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
                       {[
-                        { id: 'email', label: 'Email (Wajib)' },
-                        { id: 'name', label: 'Nama Lengkap' },
+                        { id: 'name', label: 'Nama Lengkap (Wajib)' },
                         { id: 'unit', label: 'Unit / Cabang' },
                         { id: 'role', label: 'Hak Akses' },
                       ].map(item => (

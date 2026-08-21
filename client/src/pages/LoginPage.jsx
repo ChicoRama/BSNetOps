@@ -16,8 +16,6 @@ export default function LoginPage() {
     remember: false,
   });
 
-  const [forgotEmail, setForgotEmail] = useState("");
-
   const [error, setError] = useState({
     username: "", 
     password: "",
@@ -25,9 +23,10 @@ export default function LoginPage() {
   });
 
   useEffect(() => {
-    const savedEmail = localStorage.getItem("rememberedEmail");
-    if(savedEmail){
-      setForm(prev => ({ ...prev, username: savedEmail, remember: true }));
+    // 🔥 Sekarang yang diingat adalah Nama/Username, bukan email
+    const savedName = localStorage.getItem("rememberedUsername");
+    if(savedName){
+      setForm(prev => ({ ...prev, username: savedName, remember: true }));
     }
   }, []);
 
@@ -44,20 +43,17 @@ export default function LoginPage() {
     });
   };
 
-  // 🔥 FUNGSI BARU: Pencatat Jejak Digital (Audit Trail)
   const catatLogin = async (email, userId) => {
     try {
-      // Ambil IP Address publik user
       const response = await fetch('https://api.ipify.org?format=json');
       const data = await response.json();
       const ip = data.ip;
 
-      // Simpan ke tabel login_logs di Supabase
       await supabase.from('login_logs').insert([{
         email: email,
         user_id: userId,
         ip_address: ip,
-        user_agent: navigator.userAgent // Info browser/device user (Chrome, Safari, HP, dll)
+        user_agent: navigator.userAgent 
       }]);
     } catch (err) {
       console.error("Gagal mencatat log login (bukan error fatal):", err);
@@ -70,24 +66,45 @@ export default function LoginPage() {
 
     let newError = { username: "", password: "", general: "" };
 
-    if (!form.username) newError.username = "Masukkan email";
+    // 🔥 Pesan error disesuaikan
+    if (!form.username) newError.username = "Masukkan nama lengkap / username";
     if (!form.password) newError.password = "Masukkan password";
 
     setError(newError);
     if (newError.username || newError.password) return;
 
     setIsLoading(true); 
-    const inputEmail = form.username.trim().toLowerCase();
+    
+    // 🔥 LOGIKA DETEKTIF: Cari email asli berdasarkan username
+    const rawUsername = form.username.trim();
+    let loginEmail = rawUsername; // Default kalau user iseng ngetik format email (ada @)
+
+    if (!rawUsername.includes('@')) {
+      // 1. Cari email aslinya di tabel user_roles
+      const { data: userLookup } = await supabase
+        .from('user_roles')
+        .select('email')
+        .ilike('username', rawUsername) // ilike = abaikan huruf besar/kecil
+        .maybeSingle();
+
+      if (userLookup && userLookup.email) {
+        // Ketemu akun lama (ex: Ngetik "Test Bray" -> dapet "admin@gmail.com")
+        loginEmail = userLookup.email;
+      } else {
+        // Akun baru hasil import Excel (ex: Ngetik "Joko Kendil" -> "jokokendil@bsn.local")
+        loginEmail = `${rawUsername.toLowerCase().replace(/[^a-z0-9]/g, '')}@bsn.local`;
+      }
+    }
 
     try {
-      // 1. LOGIN KE SUPABASE AUTH
+      // 1. LOGIN KE SUPABASE AUTH PAKAI EMAIL HASIL DETEKTIF
       const { data: authData, error: supabaseError } = await supabase.auth.signInWithPassword({
-        email: inputEmail, 
+        email: loginEmail, 
         password: form.password,
       });
 
       if (supabaseError) {
-        setError({ ...newError, general: "Email atau password yang Anda masukkan salah." });
+        setError({ ...newError, general: "Nama Lengkap atau password yang Anda masukkan salah." });
         setIsLoading(false);
         return;
       }
@@ -96,7 +113,7 @@ export default function LoginPage() {
       const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
         .select('email, role, is_suspended, nama_lengkap, staff_id, unit, jabatan, no_telepon, is_first_login')
-        .ilike('email', inputEmail)
+        .eq('email', loginEmail) 
         .maybeSingle(); 
 
       // 3. CEK APAKAH AKUN DITANGGUHKAN
@@ -128,28 +145,27 @@ export default function LoginPage() {
         localStorage.setItem("access_token", authData.session.access_token);
 
         if (form.remember) {
-          localStorage.setItem("rememberedEmail", inputEmail);
+          localStorage.setItem("rememberedUsername", rawUsername); // Simpan nama aslinya
         } else {
-          localStorage.removeItem("rememberedEmail");
+          localStorage.removeItem("rememberedUsername");
         }
 
         const profileInfo = {
-          email: inputEmail,
-          namaLengkap: roleData?.nama_lengkap || inputEmail.split('@')[0],
+          email: loginEmail,
+          namaLengkap: roleData?.nama_lengkap || roleData?.username || rawUsername,
           nipPegawai: roleData?.staff_id || "",
           divisi: roleData?.unit || "",
           role: userRole,    
           jabatan: roleData?.jabatan || userRole,  
           noTelepon: roleData?.no_telepon || "",
-          is_first_login: roleData?.is_first_login ?? false // Merekam status ganti password wajib
+          is_first_login: roleData?.is_first_login ?? false 
         };
         localStorage.setItem("userProfile", JSON.stringify(profileInfo));
 
-        // 🔥 PANGGIL FUNGSI PENCATAT LOG DI SINI KARENA LOGIN SUDAH SUKSES
-        await catatLogin(inputEmail, authData.user?.id);
+        await catatLogin(loginEmail, authData.user?.id);
       }
 
-      // 6. ARAHKAN KE DASHBOARD ATAU LEMPAR KE HALAMAN RESET PASSWORD
+      // 6. ARAHKAN KE DASHBOARD
       if (roleData?.is_first_login === true) {
         toast.success("Akun baru terdeteksi. Silakan ubah password Anda.", { duration: 4000 });
         navigate("/reset-password", { state: { forceReset: true } });
@@ -169,35 +185,19 @@ export default function LoginPage() {
     }
   };
 
-  const handleForgot = async (e) => {
+  // 🔥 LUPA PASSWORD DIUBAH KARENA EMAIL DUMMY TIDAK BISA MENERIMA PESAN
+  const handleForgotInfo = (e) => {
     e.preventDefault();
-
-    if (!forgotEmail) {
-      toast.error("Email wajib diisi");
-      return;
-    }
-
-    const toastId = toast.loading("Mengirim link..."); 
-
-    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-      redirectTo: `https://bsnetops.pages.dev/reset-password`,
-    });
-
-    if (error) {
-      toast.error(`Gagal: ${error.message}`, { id: toastId });
-    } else {
-      toast.success(
-        (t) => (
-          <div>
-            <b className="text-[#00634b] font-bold text-sm">Link Terkirim!</b>
-            <p className="text-xs mt-1 text-slate-600">Silakan cek kotak masuk atau folder spam email Anda.</p>
-          </div>
-        ), 
-        { id: toastId, duration: 5000, icon: '✉️' }
-      );
-      setShowForgot(false);
-      setForgotEmail("");
-    }
+    toast(
+      (t) => (
+        <div>
+          <b className="text-amber-700 font-bold text-sm">Hubungi Administrator</b>
+          <p className="text-xs mt-1 text-slate-600">Sistem login saat ini menggunakan Nama Lengkap. Untuk mereset password, silakan lapor ke Admin / HRD BSN.</p>
+        </div>
+      ),
+      { duration: 6000, icon: '📞' }
+    );
+    setShowForgot(false);
   };
 
   return (
@@ -242,17 +242,17 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* EMAIL */}
+              {/* NAMA / USERNAME (BUKAN EMAIL LAGI) */}
               <div>
                 <label className="mb-1 block text-sm font-semibold">
-                  Email
+                  Nama Lengkap / Username
                 </label>
                 <input
-                  type="email" 
+                  type="text" 
                   name="username" 
                   value={form.username}
                   onChange={handleChange}
-                  placeholder="contoh@bsn.go.id"
+                  placeholder="Contoh: Joko Kendil"
                   className="w-full rounded-lg bg-[#e7f0ec] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 transition-all"
                 />
                 {error.username && (
@@ -324,16 +324,16 @@ export default function LoginPage() {
         </section>
       )}
 
-      {/* FORGOT PASSWORD MODAL */}
+      {/* FORGOT PASSWORD MODAL (KHUSUS INFO KARENA EMAIL DUMMY) */}
       {showForgot && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm px-6 animate-in fade-in duration-200">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="mb-4 flex items-center justify-between border-b pb-3">
               <div>
                 <h2 className="text-lg font-bold text-zinc-900">
-                  Reset Password
+                  Lupa Password?
                 </h2>
-                <p className="text-[11px] text-zinc-500 mt-0.5">Kami akan mengirimkan link untuk memulihkan akunmu.</p>
+                <p className="text-[11px] text-zinc-500 mt-0.5">Informasi pemulihan akun BSN</p>
               </div>
               <button
                 onClick={() => setShowForgot(false)}
@@ -342,22 +342,17 @@ export default function LoginPage() {
                 <FaXmark />
               </button>
             </div>
-            <form onSubmit={handleForgot} className="space-y-4 mt-4">
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 mb-1">Email Terdaftar</label>
-                <input
-                  type="email"
-                  placeholder="contoh@bsn.go.id"
-                  value={forgotEmail}
-                  onChange={(e) => setForgotEmail(e.target.value)}
-                  className="w-full rounded-lg bg-zinc-50 border border-zinc-300 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#00634b]/50 focus:bg-white transition-all"
-                />
+            <form onSubmit={handleForgotInfo} className="space-y-4 mt-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-center">
+                <p className="text-sm font-medium text-amber-800">
+                  Untuk mereset password akun Anda, silakan hubungi <b className="text-amber-900">Administrator / HRD BSN</b> secara langsung.
+                </p>
               </div>
               <button
                 type="submit"
                 className="w-full cursor-pointer rounded-lg bg-[#00634b] py-2.5 text-sm font-bold text-white shadow-md hover:shadow-lg transition-all active:scale-95 hover:bg-[#004d3a]"
               >
-                Kirim Link Reset
+                Saya Mengerti
               </button>
             </form>
           </div>
