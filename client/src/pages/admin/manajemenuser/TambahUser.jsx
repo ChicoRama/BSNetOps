@@ -19,9 +19,6 @@ export default function TambahUser({ onClose, onSuccess }) {
   const [aiMapping, setAiMapping] = useState({});
   const [loading, setLoading] = useState(false);
 
-  // ==========================================
-  // FUNGSI 1: DAFTAR MANUAL
-  // ==========================================
   const handleManualSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -55,9 +52,6 @@ export default function TambahUser({ onClose, onSuccess }) {
     }
   };
 
-  // ==========================================
-  // FUNGSI 2: OTAK PINTAR (CUMA CARI 4 DATA)
-  // ==========================================
   const guessColumn = (headerName) => {
     const text = headerName.toLowerCase().replace(/[^a-z0-9]/g, ''); 
     if (text.includes('mail') || text.includes('surel')) return 'email';
