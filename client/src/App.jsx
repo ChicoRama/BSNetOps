@@ -5,8 +5,8 @@ import { supabase } from '../supabaseClient.js';
 
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage"; // Boleh dihapus kalau file-nya udah dibuang
-import ResetPassword from './pages/ResetPassword.jsx'; // 👈 Nanti halaman ini dimodif dikit untuk melayani ganti password paksa
+import RegisterPage from "./pages/RegisterPage";
+import ResetPassword from './pages/ResetPassword.jsx';
 
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Mail, Shield, Camera, Save, Building, Briefcase, Phone } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
 const toTitleCase = (str) => {
   return str.replace(/\b\w/g, (char) => char.toUpperCase());
@@ -25,7 +25,6 @@ export default function EditProfil() {
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
 
-  // 1. AUTOFILL DATA DARI DATABASE SAAT HALAMAN DIBUKA
   useEffect(() => {
     fetchProfileFromSupabase();
   }, []);
