@@ -5,7 +5,6 @@ export default function Bantuan() {
   const [openFaq, setOpenFaq] = useState(1);
   const [query, setQuery] = useState('');
 
-  // 🔥 FAQ Direvisi menyesuaikan sistem baru (Tanpa Sign Up Mandiri & Login pakai Nama)
   const faqs = [
     {
       id: 1,
@@ -27,21 +26,15 @@ export default function Bantuan() {
     },
     {
       id: 4,
-      category: 'Akun',
-      q: 'Bagaimana cara mendapatkan akun / mendaftar?',
-      a: 'Sistem ini dikhususkan untuk staf internal. Anda tidak perlu mendaftar secara mandiri. Akun Anda (ID dan Password default) akan dibuatkan langsung oleh Admin / HRD BSN.'
+      category: 'Sign Up/Register',
+      q: 'Bagaimana cara mendaftar akun?',
+      a: 'Kunjungi halaman utama web/aplikasi, klik tombol "Sign Up". Atau saat masuk di tombol "Sign In", klik "Daftar Sekarang".'
     },
      {
       id: 5,
-      category: 'Login',
-      q: 'Bagaimana cara login ke sistem?',
-      a: 'Kunjungi halaman utama, lalu klik tombol "Sign In". Anda cukup memasukkan Nama Lengkap (Username) Anda dan Password yang telah diberikan oleh Admin.'
-    },
-    {
-      id: 6,
-      category: 'Login',
-      q: 'Bagaimana jika saya lupa password?',
-      a: 'Sistem saat ini tidak mendukung reset password mandiri. Silakan hubungi Administrator atau IT Support BSN untuk mereset password akun Anda.'
+      category: 'Sign In/Login',
+      q: 'Bagaimana cara masuk ke akun?',
+      a: 'Kunjungi halaman utama web/aplikasi, klik tombol "Sign In" dan masukkan kredensial akun Anda (username/email dan password).'
     }
   ];
 
@@ -60,11 +53,10 @@ export default function Bantuan() {
   };
 
   const categoryDot = {
-    Permintaan: 'bg-sky-400',
+    Peminjaman: 'bg-sky-400',
     Approval: 'bg-amber-400',
     Teknis: 'bg-rose-400',
-    Akun: 'bg-violet-400',
-    Login: 'bg-emerald-400'
+    Pengembalian: 'bg-violet-400'
   };
 
   return (
