@@ -4,6 +4,8 @@ import { Toaster } from 'react-hot-toast';
 import { supabase } from '../supabaseClient.js';
 
 import LandingPage from "./pages/LandingPage";
+import Bantuan from "./pages/barketentuan/Bantuan.jsx";
+import 
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ResetPassword from './pages/ResetPassword.jsx';
