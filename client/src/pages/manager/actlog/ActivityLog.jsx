@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Clock, CheckCircle2, Package, Hash, Download, Calendar, ArrowDownRight, ArrowUpRight, MapPin } from 'lucide-react';
+import { Search, Clock, CheckCircle2, XCircle, Package, Hash, Download, Calendar, ArrowDownRight, ArrowUpRight, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../../../supabaseClient';
 import toast from 'react-hot-toast';
@@ -11,14 +11,12 @@ export default function ActivityLog() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // 🔥 Default awal diset 'Semua Waktu' agar kosong/tidak langsung memfilter ke bulan tertentu
   const [typeFilter, setTypeFilter] = useState('Semua Transaksi');
   const [statusFilter, setStatusFilter] = useState('Semua Status');
-  const [periodMode, setPeriodMode] = useState('Semua Waktu'); // 'Semua Waktu', 'Berdasarkan Bulan', 'Berdasarkan Tahun'
+  const [periodMode, setPeriodMode] = useState('Semua Waktu'); 
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
 
-  // State untuk Modal Export Laporan Opname (Bulanan / Tahunan)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportType, setExportType] = useState('bulanan'); 
   const [exportMonth, setExportMonth] = useState(new Date().getMonth()); 
@@ -55,6 +53,10 @@ export default function ActivityLog() {
         .from('requests')
         .select('id, unit');
 
+      const { data: usersData } = await supabase
+        .from('user_roles')
+        .select('username, unit_kerja');
+
       if (logData) {
         const formatted = logData.map(item => {
           const logType = (item.type || '').trim();
@@ -66,14 +68,29 @@ export default function ActivityLog() {
             targetUnit = matchedRequest?.unit || item.unit || 'Kantor Cabang';
           }
 
+          const matchedUser = usersData?.find(u => u.username === item.requester);
+          const unitKerja = matchedUser?.unit_kerja || 'Belum Ditentukan';
+
+          let mappedStatus = 'Disetujui';
+          const rawStatus = (item.status || '').toLowerCase();
+          
+          if (rawStatus.includes('menunggu') || rawStatus === 'pending') {
+            mappedStatus = 'Menunggu';
+          } else if (rawStatus.includes('tolak') || rawStatus === 'rejected') {
+            mappedStatus = 'Ditolak';
+          } else {
+            mappedStatus = 'Disetujui';
+          }
+
           return {
             id: item.transaction_id,
             requester: item.requester,
+            unitKerja: unitKerja, 
             itemName: item.item_name,
             qty: item.qty,
             dateRaw: item.created_at ? new Date(item.created_at) : new Date(),
             date: item.date || new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
-            status: item.status || 'Approved',
+            status: mappedStatus,
             type: normalizedType,
             unit: targetUnit 
           };
@@ -87,7 +104,6 @@ export default function ActivityLog() {
     }
   };
 
-  // 🔥 1. FUNGSI EXPORT LAPORAN OPNAME (EXCELJS)
   const exportLaporanOpname = async () => {
     setIsExportModalOpen(false); 
     const toastId = toast.loading('Menyiapkan rekapitulasi stok...');
@@ -141,7 +157,7 @@ export default function ActivityLog() {
           no: index + 1,
           kode: item.id,
           nama: item.name,
-          kategori: item.category,
+          kategori: item.category || '-',
           awal: stokAwal,
           masuk: totalMasuk,
           keluar: totalKeluar,
@@ -174,24 +190,36 @@ export default function ActivityLog() {
 
       worksheet.addRows(opnameData);
 
+      // 🔥 FIX WARNA BUNTUNG: Tembak Cell per Cell untuk Baris Header
       const headerRow = worksheet.getRow(1);
-      headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }; 
-      headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00664B' } };
-      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
       headerRow.height = 25;
+      for (let i = 1; i <= 8; i++) {
+        const cell = headerRow.getCell(i);
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; 
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00664B' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      }
 
-      worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      // 🔥 FIX BORDER BUNTUNG: Tembak Cell per Cell untuk Data Tengah
+      for (let r = 2; r <= totalBaris + 1; r++) {
+        const row = worksheet.getRow(r);
+        for (let c = 1; c <= 8; c++) {
+          const cell = row.getCell(c);
           cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-          if (rowNumber > 1) {
-            cell.alignment = { vertical: 'middle', horizontal: colNumber === 3 ? 'left' : 'center' };
-          }
-        });
-      });
+          cell.alignment = { vertical: 'middle', horizontal: c === 3 ? 'left' : 'center' };
+        }
+      }
 
+      // 🔥 FIX WARNA BUNTUNG: Tembak Cell per Cell untuk Baris Total Paling Bawah
       const lastRow = worksheet.getRow(totalBaris + 2); 
-      lastRow.font = { bold: true };
-      lastRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE047' } };
+      for (let i = 1; i <= 8; i++) {
+        const cell = lastRow.getCell(i);
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE047' } };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        cell.alignment = { vertical: 'middle', horizontal: i === 3 ? 'left' : 'center' };
+      }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -203,11 +231,11 @@ export default function ActivityLog() {
     }
   };
 
-  // 🔥 2. FUNGSI EXPORT LOG AKTIVITAS (XLSX)
   const handleExportLog = () => {
     const exportData = filteredHistory.map(item => ({
       "ID Transaksi": item.id,
       "Pemohon/Aktor": item.requester,
+      "Unit Kerja": item.unitKerja, 
       "Jenis": item.type,
       "Barang": item.itemName,
       "Jumlah": item.qty,
@@ -223,20 +251,16 @@ export default function ActivityLog() {
     toast.success("Log Aktivitas berhasil di-export!");
   };
 
-  // 🔥 Filter Logika
   const filteredHistory = history.filter(item => {
-    // 1. Filter Jenis Transaksi
     if (typeFilter !== 'Semua Transaksi') {
       if (typeFilter === 'Masuk' && item.type !== 'Masuk') return false;
       if (typeFilter === 'Keluar' && item.type !== 'Keluar') return false;
     }
 
-    // 2. Filter Status
     if (statusFilter !== 'Semua Status') {
-      if (item.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+      if (item.status !== statusFilter) return false;
     }
 
-    // 3. Filter Periode
     if (periodMode === 'Berdasarkan Bulan') {
       if (selectedMonth) {
         const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
@@ -254,12 +278,12 @@ export default function ActivityLog() {
       }
     }
 
-    // 4. Filter Pencarian Teks
     const query = searchQuery.toLowerCase();
     const matchSearch = 
       item.requester.toLowerCase().includes(query) ||
       item.itemName.toLowerCase().includes(query) ||
       item.id.toLowerCase().includes(query) ||
+      (item.unitKerja && item.unitKerja.toLowerCase().includes(query)) ||
       (item.unit && item.unit.toLowerCase().includes(query));
 
     return matchSearch;
@@ -276,7 +300,6 @@ export default function ActivityLog() {
           <p className="text-xs text-white/80 mt-0.5">Pantau arus barang masuk/keluar dan rekapitulasi data logistik BSN</p>
         </div>
 
-        {/* 2 TOMBOL EXPORT BERDAMPINGAN */}
         <div className="flex flex-wrap items-center gap-2">
           <button 
             onClick={() => setIsExportModalOpen(true)}
@@ -303,7 +326,7 @@ export default function ActivityLog() {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari berdasarkan kode atau nama barang..." 
+              placeholder="Cari berdasarkan kode, nama barang, atau unit kerja..." 
               className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]"
             />
           </div>
@@ -325,14 +348,13 @@ export default function ActivityLog() {
               className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-2 cursor-pointer font-medium text-sm focus:outline-none focus:border-[#00664b]"
             >
               <option value="Semua Status">Semua Status</option>
-              <option value="Approved">Approved</option>
-              <option value="Pending">Pending</option>
-              <option value="Rejected">Rejected</option>
+              <option value="Disetujui">Disetujui</option>
+              <option value="Menunggu">Menunggu</option>
+              <option value="Ditolak">Ditolak</option>
             </select>
           </div>
         </div>
 
-        {/* Baris Filter Periode */}
         <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-zinc-100 text-xs text-zinc-600">
           <span className="font-semibold flex items-center gap-1">
             <Calendar size={14} className="text-[#00664b]" /> Filter periode:
@@ -341,8 +363,8 @@ export default function ActivityLog() {
             value={periodMode}
             onChange={(e) => {
               setPeriodMode(e.target.value);
-              setSelectedMonth(''); // Reset bulan saat mode periode diubah
-              setSelectedYear('');  // Reset tahun saat mode periode diubah
+              setSelectedMonth('');
+              setSelectedYear('');
             }}
             className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-1.5 font-medium cursor-pointer focus:outline-none focus:border-[#00664b]"
           >
@@ -351,13 +373,12 @@ export default function ActivityLog() {
             <option value="Berdasarkan Tahun">Berdasarkan Tahun</option>
           </select>
 
-          {/* Muncul Dropdown Bulan jika 'Berdasarkan Bulan' dipilih */}
           {periodMode === 'Berdasarkan Bulan' && (
             <select 
               value={selectedMonth}
               onChange={(e) => {
                 setSelectedMonth(e.target.value);
-                if (!selectedYear) setSelectedYear('2026'); // Auto set tahun default kalau belum dipilih
+                if (!selectedYear) setSelectedYear('2026');
               }}
               className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-1.5 font-medium cursor-pointer focus:outline-none focus:border-[#00664b]"
             >
@@ -366,7 +387,6 @@ export default function ActivityLog() {
             </select>
           )}
 
-          {/* Muncul Kolom Tahun HANYA JIKA Bulan sudah dipilih ATAU Mode 'Berdasarkan Tahun' aktif */}
           {( (periodMode === 'Berdasarkan Bulan' && selectedMonth !== '') || periodMode === 'Berdasarkan Tahun' ) && (
             <select 
               value={selectedYear}
@@ -404,6 +424,8 @@ export default function ActivityLog() {
                   
                   <p className="text-sm text-zinc-700 leading-relaxed">
                     <span className="font-bold text-zinc-900">{item.requester}</span> 
+                    <span className="text-zinc-600"> dari unit kerja </span>
+                    <span className="font-bold text-zinc-900">{item.unitKerja}</span>
                     {item.type === 'Masuk' ? (
                       ' mendaftarkan barang masuk/restock ke dalam inventaris berupa '
                     ) : (
@@ -425,11 +447,15 @@ export default function ActivityLog() {
                   <span className={`px-3 py-1.5 rounded-md text-xs font-bold border ${item.type === 'Masuk' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
                     <Package size={14} className="inline mr-1" /> {item.type}
                   </span>
+                  
                   <span className={`px-3 py-1.5 rounded-md text-xs font-bold ${
-                    item.status.toLowerCase() === 'approved' || item.status.toLowerCase() === 'selesai' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    item.status.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'
+                    item.status === 'Disetujui' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    item.status === 'Menunggu' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'
                   }`}>
-                    <CheckCircle2 size={14} className="inline mr-1" /> {item.status}
+                    {item.status === 'Disetujui' && <CheckCircle2 size={14} className="inline mr-1" />}
+                    {item.status === 'Menunggu' && <Clock size={14} className="inline mr-1" />}
+                    {item.status === 'Ditolak' && <XCircle size={14} className="inline mr-1" />}
+                    {item.status}
                   </span>
                 </div>
               </div>

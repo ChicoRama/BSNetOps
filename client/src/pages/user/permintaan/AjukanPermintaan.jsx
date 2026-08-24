@@ -1,14 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Check, X as CloseIcon, CheckSquare, MoreVertical, Download, 
+  User, Shield, Briefcase, Building, Users 
+} from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import TemplateDokumenA4 from './TemplateDokumenA4';
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
 export default function AjukanPermintaan() {
   const printRef = useRef();
-
-  const savedAssets = JSON.parse(localStorage.getItem('selectedAssetData')) || [];
-  const isMultiItem = Array.isArray(savedAssets) && savedAssets.length > 0;
 
   const [currentStep, setCurrentStep] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
@@ -16,37 +17,85 @@ export default function AjukanPermintaan() {
   
   // State Form Utama
   const [formData, setFormData] = useState({
-    namaLengkap: '', nipPegawai: '', divisi: '', jabatan: '', email: '', noTelepon: '',
+    namaLengkap: '', nipPegawai: '', divisi: '', jabatan: '', email: '', unitKerja: '',
     tanggalDibutuhkan: '', keperluan: ''
   });
 
   // State Detail Barang (Items)
   const [daftarBarang, setDaftarBarang] = useState([]);
 
+  // ==========================================
+  // 🔥 LOAD DRAFT & HANDLE BARANG DARI KATALOG
+  // ==========================================
   useEffect(() => {
-    if (isMultiItem) {
-      initializeItemsWithAutoPriority(savedAssets);
-      localStorage.removeItem('selectedAssetData');
-    }
-
-    const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
+    const draftStr = localStorage.getItem('draft_ajukan_permintaan');
+    const draftData = draftStr ? JSON.parse(draftStr) : null;
     
-    if (activeUser) {
-      const identifier = activeUser.email || activeUser.username || activeUser.namaLengkap;
+    const savedAssetsStr = localStorage.getItem('selectedAssetData');
+    const newAssetsFromCatalog = savedAssetsStr ? JSON.parse(savedAssetsStr) : [];
+    const hasNewAssets = Array.isArray(newAssetsFromCatalog) && newAssetsFromCatalog.length > 0;
 
-      setFormData(prev => ({
-        ...prev,
-        namaLengkap: activeUser.namaLengkap || activeUser.name || activeUser.username || '',
-        email: activeUser.email || '',
-        nipPegawai: activeUser.nip || activeUser.staff_id || '',
-        divisi: activeUser.unit || activeUser.divisi || '',
-        jabatan: activeUser.role || activeUser.jabatan || '',
-        noTelepon: activeUser.phone || activeUser.no_telepon || activeUser.no_hp || ''
-      }));
+    const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
+    const identifier = activeUser?.email || activeUser?.username || activeUser?.namaLengkap;
 
-      fetchUserProfileFromDB(identifier);
+    // PENGAMANAN: Pastikan data diri (identitas) SELALU ADA dan tidak ketimpa draft kosong
+    const baseProfileData = {
+      namaLengkap: activeUser.namaLengkap || activeUser.name || activeUser.username || '',
+      email: activeUser.email || '', // Tetap disimpan di background untuk database
+      nipPegawai: activeUser.nip || activeUser.staff_id || '',
+      divisi: activeUser.unit || activeUser.divisi || '',
+      jabatan: activeUser.role || activeUser.jabatan || '',
+      unitKerja: activeUser.unit_kerja || activeUser.unitKerja || ''
+    };
+
+    if (draftData && draftData.formData) {
+      setFormData({
+        ...draftData.formData,
+        // Paksa timpa dengan identitas asli agar tidak pernah kosong
+        namaLengkap: draftData.formData.namaLengkap || baseProfileData.namaLengkap,
+        email: draftData.formData.email || baseProfileData.email,
+        nipPegawai: draftData.formData.nipPegawai || baseProfileData.nipPegawai,
+        divisi: draftData.formData.divisi || baseProfileData.divisi,
+        jabatan: draftData.formData.jabatan || baseProfileData.jabatan,
+        unitKerja: draftData.formData.unitKerja || baseProfileData.unitKerja,
+      });
+    } else {
+      setFormData(prev => ({ ...prev, ...baseProfileData }));
     }
-  }, [isMultiItem]);
+
+    if (identifier) fetchUserProfileFromDB(identifier);
+
+    // Setup Step & Gabungkan Barang
+    let existingItems = draftData && draftData.daftarBarang ? draftData.daftarBarang : [];
+
+    if (hasNewAssets) {
+      // Jika bawa barang baru dari katalog, otomatis lompat ke Step 2 & Gabungkan
+      setCurrentStep(2);
+      initializeItemsWithAutoPriority(newAssetsFromCatalog, existingItems);
+      localStorage.removeItem('selectedAssetData'); 
+    } else {
+      setDaftarBarang(existingItems);
+      if (draftData && draftData.currentStep) {
+        setCurrentStep(draftData.currentStep);
+      }
+    }
+  }, []);
+
+  // ==========================================
+  // 🔥 AUTO-SAVE DRAFT (Setiap Ada Perubahan)
+  // ==========================================
+  useEffect(() => {
+    // Jangan save kalau formData nama masih kosong!
+    if (currentStep <= 3 && formData.namaLengkap) {
+      const draftToSave = {
+        currentStep,
+        formData,
+        daftarBarang
+      };
+      localStorage.setItem('draft_ajukan_permintaan', JSON.stringify(draftToSave));
+    }
+  }, [currentStep, formData, daftarBarang]);
+
 
   const fetchUserProfileFromDB = async (identifier) => {
     if (!identifier) return;
@@ -57,9 +106,7 @@ export default function AjukanPermintaan() {
         .or(`email.eq.${identifier},username.eq.${identifier}`)
         .maybeSingle();
 
-      if (error) throw error;
-
-      if (data) {
+      if (data && !error) {
         setFormData(prev => ({
           ...prev,
           namaLengkap: data.username || data.name || data.nama_lengkap || data.email?.split('@')[0] || prev.namaLengkap,
@@ -67,7 +114,7 @@ export default function AjukanPermintaan() {
           divisi: data.unit || data.divisi || prev.divisi,            
           jabatan: data.role || data.jabatan || prev.jabatan,       
           email: data.email || prev.email,
-          noTelepon: data.phone || data.no_telepon || data.no_hp || prev.noTelepon 
+          unitKerja: data.unit_kerja || prev.unitKerja
         }));
       }
     } catch (err) {
@@ -75,14 +122,14 @@ export default function AjukanPermintaan() {
     }
   };
 
-  const initializeItemsWithAutoPriority = async (assets) => {
+  const initializeItemsWithAutoPriority = async (newAssets, existingItems = []) => {
     setIsCheckingPriority(true);
     try {
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
       const isoOneYearAgo = oneYearAgo.toISOString();
 
-      const processedItems = await Promise.all(assets.map(async (asset) => {
+      const processedNewItems = await Promise.all(newAssets.map(async (asset) => {
         const { count, error } = await supabase
           .from('request_items')
           .select('id, created_at', { count: 'exact', head: true })
@@ -126,18 +173,37 @@ export default function AjukanPermintaan() {
         };
       }));
 
-      setDaftarBarang(processedItems);
+      const combined = [...existingItems];
+      processedNewItems.forEach(newItem => {
+        const existsIdx = combined.findIndex(item => item.kodeAset === newItem.kodeAset);
+        if (existsIdx >= 0) {
+          const newQty = combined[existsIdx].jumlah + newItem.jumlah;
+          combined[existsIdx].jumlah = Math.min(newQty, combined[existsIdx].stokMaksimal);
+        } else {
+          combined.push(newItem);
+        }
+      });
+
+      setDaftarBarang(combined);
     } catch (err) {
       console.error("Gagal menghitung prioritas otomatis:", err.message);
-      const fallbackItems = assets.map(asset => ({
-        namaAset: asset.namaAset,
-        kodeAset: asset.kodeAset,
-        jumlah: asset.jumlah || 1,
-        stokMaksimal: asset.stock || 999, 
-        prioritas: 'Rendah',
-        keterangan: ''
-      }));
-      setDaftarBarang(fallbackItems);
+      const combined = [...existingItems];
+      newAssets.forEach(asset => {
+        const existsIdx = combined.findIndex(item => item.kodeAset === asset.kodeAset);
+        if (existsIdx >= 0) {
+          combined[existsIdx].jumlah += (asset.jumlah || 1);
+        } else {
+          combined.push({
+            namaAset: asset.namaAset,
+            kodeAset: asset.kodeAset,
+            jumlah: asset.jumlah || 1,
+            stokMaksimal: asset.stock || 999, 
+            prioritas: 'Rendah',
+            keterangan: ''
+          });
+        }
+      });
+      setDaftarBarang(combined);
     } finally {
       setIsCheckingPriority(false);
     }
@@ -189,6 +255,12 @@ export default function AjukanPermintaan() {
     setDaftarBarang(updated);
   };
 
+  const handleRemoveItem = (index) => {
+    const updated = [...daftarBarang];
+    updated.splice(index, 1);
+    setDaftarBarang(updated);
+  };
+
   const handleNext = (e) => {
     e.preventDefault();
     if (currentStep === 1) setCurrentStep(2);
@@ -234,7 +306,7 @@ export default function AjukanPermintaan() {
           {
             id: generatedId,
             nama_pemohon: formData.namaLengkap,
-            email_pemohon: formData.email,
+            email_pemohon: formData.email, // Email dikirim ke database saja, tidak tampil di UI
             unit: formData.divisi,
             tanggal: formData.tanggalDibutuhkan,
             jam: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
@@ -285,6 +357,9 @@ export default function AjukanPermintaan() {
       }
 
       toast.success('Pengajuan permintaan berhasil dikirim!', { id: toastId });
+      
+      // Penghapusan draft karena sudah sukses tersimpan
+      localStorage.removeItem('draft_ajukan_permintaan');
       setCurrentStep(4);
 
     } catch (err) {
@@ -329,12 +404,12 @@ export default function AjukanPermintaan() {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto flex flex-col items-center">
+    <div className="w-full max-w-4xl mx-auto flex flex-col items-center animate-in fade-in duration-300">
       
       {currentStep <= 3 && (
         <div className="w-full max-w-2xl mb-6 text-white print:hidden">
           <h1 className="text-2xl font-bold">Ajukan Permintaan</h1>
-          <p className="text-sm opacity-90">Sistem otomatis menghitung tingkat prioritas berdasarkan frekuensi permintaan tahunan</p>
+          <p className="text-sm opacity-90">Sistem otomatis menyimpan draft Anda dan menghitung prioritas</p>
           
           <div className="flex items-center space-x-4 mt-4 text-xs">
             <div className={`flex items-center space-x-1 ${currentStep === 1 ? 'font-semibold' : 'opacity-60'}`}>
@@ -373,63 +448,86 @@ export default function AjukanPermintaan() {
       )}
 
       {currentStep <= 3 ? (
-        <div className="bg-white w-full max-w-2xl rounded-2xl shadow-lg p-8 text-black">
+        <div className="bg-white w-full max-w-2xl rounded-2xl shadow-lg p-8 text-black relative">
+          
           {currentStep <= 2 ? (
             <form onSubmit={handleNext}>
               {currentStep === 1 && (
                 <>
-                  <h2 className="text-xl font-bold mb-6">Informasi Pemohon</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
-                      <input type="text" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b]" required />
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold">Informasi Pemohon</h2>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    
+                    <div className="space-y-1.5 sm:col-span-2">
+                      <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Nama Lengkap</label>
+                      <div className="relative flex items-center">
+                        <User size={16} className="absolute left-3 text-zinc-400" />
+                        <input type="text" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white font-medium text-zinc-800 transition-colors" required />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">NIP/ ID pegawai</label>
-                      <input type="text" name="nipPegawai" value={formData.nipPegawai} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-not-allowed" readOnly required />
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">NIP / ID Pegawai</label>
+                      <div className="relative flex items-center">
+                        <Shield size={16} className="absolute left-3 text-zinc-400" />
+                        <input type="text" name="nipPegawai" value={formData.nipPegawai} onChange={handleChange} className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" readOnly required />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                      <select name="divisi" value={formData.divisi} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-pointer" required>
-                        <option value="" disabled hidden>Pilih Unit</option>
-                        <option value="KC Semarang">KC Semarang</option>
-                        <option value="KCP Majapahit">KCP Majapahit</option>
-                        <option value="KCP Ngaliyan">KCP Ngaliyan</option>
-                        <option value="KCP Ungaran">KCP Ungaran</option>
-                        <option value="KCP Kendal">KCP Kendal</option>
-                        <option value="KCP Kudus">KCP Kudus</option>
-                        <option value="KCP Magelang">KCP Magelang</option>
-                        {!["KC Semarang", "KCP Majapahit", "KCP Ngaliyan", "KCP Ungaran", "KCP Kendal", "KCP Kudus", "KCP Magelang", ""].includes(formData.divisi) && (
-                          <option value={formData.divisi}>{formData.divisi}</option>
-                        )}
-                      </select>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Jabatan</label>
+                      <div className="relative flex items-center">
+                        <Briefcase size={16} className="absolute left-3 text-zinc-400" />
+                        <input type="text" name="jabatan" value={formData.jabatan} readOnly className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium capitalize cursor-not-allowed" required />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Jabatan</label>
-                      <input
-                        type="text"
-                        name="jabatan"
-                        value={formData.jabatan}
-                        readOnly
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed focus:outline-none capitalize font-medium"
-                        required
-                      />
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Cabang Tujuan</label>
+                      <div className="relative flex items-center">
+                        <Building size={16} className="absolute left-3 text-zinc-400 z-10 pointer-events-none" />
+                        <select name="divisi" value={formData.divisi} onChange={handleChange} className="w-full pl-10 pr-8 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer appearance-none" required>
+                          <option value="" disabled hidden>Pilih Cabang Tujuan</option>
+                          <option value="KC Semarang">KC Semarang</option>
+                          <option value="KCP Majapahit">KCP Majapahit</option>
+                          <option value="KCP Ngaliyan">KCP Ngaliyan</option>
+                          <option value="KCP Ungaran">KCP Ungaran</option>
+                          <option value="KCP Kendal">KCP Kendal</option>
+                          <option value="KCP Kudus">KCP Kudus</option>
+                          <option value="KCP Magelang">KCP Magelang</option>
+                          {!["KC Semarang", "KCP Majapahit", "KCP Ngaliyan", "KCP Ungaran", "KCP Kendal", "KCP Kudus", "KCP Magelang", ""].includes(formData.divisi) && (
+                            <option value={formData.divisi}>{formData.divisi}</option>
+                          )}
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                      <input type="email" name="email" value={formData.email} onChange={handleChange} className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] cursor-not-allowed" readOnly required />
+
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Unit Kerja</label>
+                      <div className="relative flex items-center">
+                        <Users size={16} className="absolute left-3 text-zinc-400 z-10 pointer-events-none" />
+                        <select name="unitKerja" value={formData.unitKerja} onChange={handleChange} className="w-full pl-10 pr-8 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer appearance-none" required>
+                          <option value="" disabled hidden>Pilih Unit Kerja</option>
+                          <option value="CWO">CWO</option>
+                          <option value="FA & FD">FA & FD</option>
+                          <option value="Accounting">Accounting</option>
+                          <option value="Operasional">Operasional</option>
+                          <option value="Teller">Teller</option>
+                          <option value="FS">FS</option>
+                          <option value="CS">CS</option>
+                          <option value="Commercial">Commercial</option>
+                          <option value="Sekretaris">Sekretaris</option>
+                          <option value="Funding">Funding</option>
+                          <option value="Consumer">Consumer</option>
+                          {formData.unitKerja && !["CWO", "FA & FD", "Accounting", "Operasional", "Teller", "FS", "CS", "Commercial", "Sekretaris", "Funding", "Consumer", ""].includes(formData.unitKerja) && (
+                            <option value={formData.unitKerja}>{formData.unitKerja}</option>
+                          )}
+                        </select>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">No Telephone</label>
-                      <input 
-                        type="number" 
-                        name="noTelepon" 
-                        value={formData.noTelepon} 
-                        onChange={handleChange} 
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
-                        required 
-                      />
-                    </div>
+
                   </div>
                   <div className="text-center text-xs text-gray-500 mt-8">1/3</div>
                 </>
@@ -438,10 +536,15 @@ export default function AjukanPermintaan() {
               {currentStep === 2 && (
                 <>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                    <h2 className="text-xl font-bold">Detail Daftar Barang</h2>
-                    <div className="w-full sm:w-auto">
-                      <label className="block text-xs font-bold text-gray-700 mb-1">Tanggal Dibutuhkan</label>
-                      <input type="date" name="tanggalDibutuhkan" value={formData.tanggalDibutuhkan} onChange={handleChange} min={getTodayDate()} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] text-sm" required />
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-xl font-bold">Detail Daftar Barang</h2>
+                      <span className="bg-[#e7f0ec] text-[#00664b] px-2.5 py-0.5 rounded-full text-[10px] font-bold">Draft Tersimpan</span>
+                    </div>
+                    <div className="w-full sm:w-auto flex items-center gap-2">
+                      <div className="w-full sm:w-auto">
+                        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase">Tanggal Dibutuhkan</label>
+                        <input type="date" name="tanggalDibutuhkan" value={formData.tanggalDibutuhkan} onChange={handleChange} min={getTodayDate()} className="w-full px-3 py-1.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#4d8c6b] text-sm font-semibold" required />
+                      </div>
                     </div>
                   </div>
                   
@@ -450,9 +553,19 @@ export default function AjukanPermintaan() {
                       ⚡ Menghubungkan database dan mengecek ketersediaan stok gudang...
                     </div>
                   ) : (
-                    <div className="border border-zinc-200 rounded-xl p-4 bg-zinc-50/50 space-y-4 mb-6 max-h-[350px] overflow-y-auto">
+                    <div className="border border-zinc-200 rounded-xl p-4 bg-zinc-50/50 space-y-4 mb-6 max-h-[350px] overflow-y-auto relative">
                       {daftarBarang.map((barang, idx) => (
-                        <div key={barang.kodeAset} className="flex flex-col gap-3 p-3 bg-white border border-zinc-200 rounded-lg shadow-sm">
+                        <div key={barang.kodeAset} className="flex flex-col gap-3 p-3 bg-white border border-zinc-200 rounded-lg shadow-sm relative group">
+                          
+                          <button 
+                            type="button"
+                            onClick={() => handleRemoveItem(idx)}
+                            className="absolute -top-2 -right-2 bg-white text-zinc-300 hover:text-red-500 rounded-full cursor-pointer transition-colors shadow-sm border border-zinc-100"
+                            title="Hapus barang ini dari daftar"
+                          >
+                            <CloseIcon size={20} />
+                          </button>
+
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2">
                             <div>
                               <div className="text-sm font-bold capitalize text-zinc-800">{barang.namaAset}</div>
@@ -512,28 +625,55 @@ export default function AjukanPermintaan() {
                 </>
               )}
 
-              <div className="flex justify-end space-x-4 mt-6">
-                <button type="button" onClick={handleBack} className="px-6 py-2 border border-red-500 text-red-500 rounded-lg text-sm font-medium">{currentStep === 2 ? 'Kembali' : 'Batal'}</button>
-                <button type="submit" disabled={isCheckingPriority} className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50">Selanjutnya</button>
+              <div className="flex justify-end space-x-4 mt-6 border-t border-zinc-100 pt-6">
+                {currentStep > 1 && (
+                  <button type="button" onClick={handleBack} className="px-6 py-2 border border-red-500 text-red-500 rounded-lg text-sm font-medium hover:bg-red-50 cursor-pointer transition-colors">
+                    Kembali
+                  </button>
+                )}
+                <button type="submit" disabled={isCheckingPriority} className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50 hover:bg-[#034d2f] transition-colors shadow-md">
+                  Selanjutnya
+                </button>
               </div>
             </form>
           ) : (
             <div>
               <div className="mb-6">
                 <h2 className="text-lg font-bold mb-4">Review Permintaan</h2>
-                <div className="grid grid-cols-[180px_minmax(0,1fr)] gap-y-2 text-sm">
-                  <span className="font-medium text-zinc-500">Nama Lengkap</span><span className="font-bold">: {formData.namaLengkap}</span>
-                  <span className="font-medium text-zinc-500">Unit</span><span>: {formData.divisi}</span>
-                  <span className="font-medium text-zinc-500">Tanggal Dibutuhkan</span><span>: {formData.tanggalDibutuhkan}</span>
+                <div className="bg-zinc-50 p-5 rounded-xl border border-zinc-100 grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="col-span-2 md:col-span-4">
+                    <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Nama Lengkap</span>
+                    <span className="text-zinc-900 font-bold text-sm">{formData.namaLengkap}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">ID Pegawai</span>
+                    <span className="text-zinc-900 font-bold text-sm">{formData.nipPegawai}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Jabatan</span>
+                    <span className="text-zinc-900 font-bold text-sm">{formData.jabatan}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Unit Kerja</span>
+                    <span className="text-zinc-900 font-bold text-sm">{formData.unitKerja || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Cabang Tujuan</span>
+                    <span className="text-zinc-900 font-bold text-sm">{formData.divisi}</span>
+                  </div>
+                  <div className="col-span-2 md:col-span-4 pt-3 border-t border-zinc-200/60 mt-2">
+                    <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Tanggal Dibutuhkan</span>
+                    <span className="text-[#00664b] font-black text-sm">{formData.tanggalDibutuhkan}</span>
+                  </div>
                 </div>
               </div>
-              <hr className="border-gray-300 my-4" />
+              
               <div className="mb-6">
                 <h2 className="text-lg font-bold mb-3">Rincian Per Barang ({daftarBarang.length})</h2>
-                <div className="border border-zinc-200 rounded-xl overflow-hidden text-xs">
+                <div className="border border-zinc-200 rounded-xl overflow-hidden text-xs shadow-sm">
                   <div className="bg-zinc-100 font-bold p-2.5 grid grid-cols-[1fr_100px]"><span>Nama Barang & Keterangan</span><span>Kuantitas</span></div>
                   {daftarBarang.map((b) => (
-                    <div key={b.kodeAset} className="border-t border-zinc-200 p-3 flex justify-between items-start capitalize">
+                    <div key={b.kodeAset} className="border-t border-zinc-200 p-3 flex justify-between items-start capitalize bg-white">
                       <div>
                         <span className="block font-bold text-sm text-zinc-800">{b.namaAset}</span>
                         <span className="text-[10px] text-zinc-400 font-mono block mb-1">ID: {b.kodeAset}</span>
@@ -556,22 +696,22 @@ export default function AjukanPermintaan() {
                   ))}
                 </div>
               </div>
-              <div className="flex justify-end space-x-4 mt-8">
-                <button type="button" onClick={handleBack} className="px-6 py-2 border border-gray-400 text-gray-700 rounded-lg text-sm font-medium cursor-pointer">Ubah</button>
+              <div className="flex justify-end space-x-4 mt-8 pt-4 border-t border-zinc-100">
+                <button type="button" onClick={handleBack} className="px-6 py-2 border border-gray-400 text-gray-700 rounded-lg text-sm font-medium cursor-pointer hover:bg-zinc-50 transition-colors">Ubah</button>
                 <button 
                   type="button" 
                   onClick={handleSubmitFinal} 
                   disabled={isExporting}
-                  className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50"
+                  className="px-6 py-2 bg-[#045936] text-white rounded-lg text-sm font-bold cursor-pointer disabled:opacity-50 hover:bg-[#034d2f] transition-colors shadow-md flex gap-2 items-center"
                 >
-                  {isExporting ? 'Memproses ke Database...' : 'Ajukan Permintaan Sekarang'}
+                  {isExporting ? 'Memproses ke Database...' : <><CheckSquare size={18} /> Ajukan Permintaan Sekarang</>}
                 </button>
               </div>
             </div>
           )}
         </div>
       ) : (
-        <div className="shadow-2xl print:shadow-none bg-white rounded-lg overflow-hidden">
+        <div className="shadow-2xl print:shadow-none bg-white rounded-lg overflow-hidden flex justify-center w-full">
           <TemplateDokumenA4 ref={printRef} formData={formData} daftarBarang={daftarBarang} />
         </div>
       )}

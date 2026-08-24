@@ -9,6 +9,7 @@ export default function TambahUser({ onClose, onSuccess }) {
   const [formData, setFormData] = useState({ 
     name: '', 
     unit: '', 
+    unit_kerja: '', // 🔥 Tambahan Unit Kerja
     role: 'User', 
     status: 'Aktif' 
   });
@@ -25,7 +26,6 @@ export default function TambahUser({ onClose, onSuccess }) {
 
     try {
       // 🔥 TRIK NINJA: Membuat Email Siluman (Dummy)
-      // Contoh: "Joko Kendil" -> "jokokendil@bsn.local"
       const rawName = formData.name || 'user';
       const dummyEmail = `${rawName.toLowerCase().replace(/[^a-z0-9]/g, '')}@bsn.local`;
 
@@ -33,9 +33,10 @@ export default function TambahUser({ onClose, onSuccess }) {
         body: { 
           users: [{
             name: formData.name,
-            email: dummyEmail, // <-- Email siluman dikirim ke Supabase
+            email: dummyEmail, 
             role: formData.role,
             unit: formData.unit,
+            unit_kerja: formData.unit_kerja, // 🔥 Unit kerja dikirim
             status: formData.status
           }] 
         }
@@ -58,10 +59,16 @@ export default function TambahUser({ onClose, onSuccess }) {
 
   const guessColumn = (headerName) => {
     const text = headerName.toLowerCase().replace(/[^a-z0-9]/g, ''); 
-    // 🔥 Pengecekan email udah dihapus total dari otak AI
+    
     if (text.includes('nama') || text.includes('name') || text.includes('lengkap')) return 'name';
     if (text.includes('role') || text.includes('peran') || text.includes('hakakses') || text.includes('jabatan') || text.includes('akses') || text.includes('level')) return 'role';
-    if (text.includes('unit') || text.includes('divisi') || text.includes('cabang')) return 'unit';
+    
+    // 🔥 Deteksi Unit Kerja / Divisi
+    if (text.includes('kerja') || text.includes('departemen') || text.includes('dept') || text.includes('divisi')) return 'unit_kerja';
+    
+    // 🔥 Deteksi Unit Cabang / Penempatan
+    if (text.includes('unit') || text.includes('cabang') || text.includes('penempatan')) return 'unit';
+    
     return null; 
   };
 
@@ -105,7 +112,6 @@ export default function TambahUser({ onClose, onSuccess }) {
   };
 
   const executeImport = async () => {
-    // 🔥 Sekarang yang WAJIB itu NAMA, bukan Email lagi
     if (!aiMapping.name) {
       toast.error("Kolom 'Nama Lengkap' tidak terdeteksi di Excel Anda!");
       return;
@@ -116,17 +122,15 @@ export default function TambahUser({ onClose, onSuccess }) {
 
     try {
       const formattedUsers = rawExcelData.map(row => {
-        // Ambil nama asli dari Excel
         const rawName = row[aiMapping.name];
-        
-        // 🔥 TRIK NINJA: Membuat Email Siluman untuk tiap baris Excel
         const dummyEmail = `${rawName.toLowerCase().replace(/[^a-z0-9]/g, '')}@bsn.local`;
 
         return {
-          email: dummyEmail, // <-- Email siluman disisipkan otomatis
+          email: dummyEmail, 
           name: rawName,
           role: aiMapping.role ? row[aiMapping.role] : 'User',
           unit: aiMapping.unit ? row[aiMapping.unit] : 'Belum Ditentukan',
+          unit_kerja: aiMapping.unit_kerja ? row[aiMapping.unit_kerja] : 'Belum Ditentukan', // 🔥 Format Unit Kerja dari Excel
           status: 'Aktif' 
         };
       });
@@ -194,21 +198,8 @@ export default function TambahUser({ onClose, onSuccess }) {
                 />
               </div>
 
+              {/* BARIS KEDUA: UNIT CABANG & UNIT KERJA */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Hak Akses</label>
-                  <select 
-                    required
-                    value={formData.role} 
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer transition-all"
-                  >
-                    <option value="User">User</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Admin">Admin</option>
-                  </select>
-                </div>
-
                 <div>
                   <label className="block text-xs font-bold text-zinc-700 mb-1">Unit / Cabang</label>
                   <select 
@@ -227,18 +218,58 @@ export default function TambahUser({ onClose, onSuccess }) {
                     <option value="KCP Magelang">KCP Magelang</option>
                   </select>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Unit Kerja / Divisi</label>
+                  <select 
+                    required
+                    value={formData.unit_kerja} 
+                    onChange={(e) => setFormData({ ...formData, unit_kerja: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer transition-all"
+                  >
+                    <option value="" disabled hidden>Pilih Unit Kerja</option>
+                    <option value="CWO">CWO</option>
+                    <option value="FA & FD">FA & FD</option>
+                    <option value="Accounting">Accounting</option>
+                    <option value="Operasional">Operasional</option>
+                    <option value="Teller">Teller</option>
+                    <option value="FS">FS</option>
+                    <option value="CS">CS</option>
+                    <option value="Commercial">Commercial</option>
+                    <option value="Sekretaris">Sekretaris</option>
+                    <option value="Funding">Funding</option>
+                    <option value="Consumer">Consumer</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 mb-1">Status Awal</label>
-                <select 
-                  value={formData.status} 
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
-                >
-                  <option value="Aktif">Aktif</option>
-                  <option value="Suspend">Suspend</option>
-                </select>
+              {/* BARIS KETIGA: HAK AKSES & STATUS */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Hak Akses</label>
+                  <select 
+                    required
+                    value={formData.role} 
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer transition-all"
+                  >
+                    <option value="User">User</option>
+                    <option value="Manager">Manager</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Status Awal</label>
+                  <select 
+                    value={formData.status} 
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-300 rounded-xl text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer"
+                  >
+                    <option value="Aktif">Aktif</option>
+                    <option value="Suspend">Suspend</option>
+                  </select>
+                </div>
               </div>
             </form>
           )}
@@ -252,7 +283,7 @@ export default function TambahUser({ onClose, onSuccess }) {
                   </div>
                   <h4 className="font-bold text-zinc-800 mb-2">Upload Data Bebas</h4>
                   <p className="text-xs text-zinc-500 mb-6">
-                    Sistem <b>Smart-Mapping</b> otomatis mendeteksi kolom Nama, Unit, dan Hak Akses dari file Excel Anda. ID BSN akan di-generate otomatis.
+                    Sistem <b>Smart-Mapping</b> otomatis mendeteksi kolom Nama, Unit, Unit Kerja, dan Hak Akses dari file Excel Anda. ID BSN akan di-generate otomatis.
                   </p>
                   
                   <label className={`
@@ -284,6 +315,7 @@ export default function TambahUser({ onClose, onSuccess }) {
                       {[
                         { id: 'name', label: 'Nama Lengkap (Wajib)' },
                         { id: 'unit', label: 'Unit / Cabang' },
+                        { id: 'unit_kerja', label: 'Unit Kerja / Divisi' }, // 🔥 Tabel Info Preview
                         { id: 'role', label: 'Hak Akses' },
                       ].map(item => (
                         <tr key={item.id}>

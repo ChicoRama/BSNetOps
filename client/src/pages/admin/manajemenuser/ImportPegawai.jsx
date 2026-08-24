@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
-import { supabase } from '../../supabaseClient'; 
+import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast';
 import { FaCloudUploadAlt, FaMagic, FaCheckCircle } from 'react-icons/fa';
 
@@ -10,19 +10,22 @@ export default function ImportPegawai() {
   
   const [rawExcelData, setRawExcelData] = useState([]);
   const [aiMapping, setAiMapping] = useState({});
-  const [finalData, setFinalData] = useState([]);
 
   // 🔥 1. OTAK PINTAR (SMART MAPPER) UNTUK MENEBAK KOLOM
   const guessColumn = (headerName) => {
-    const text = headerName.toLowerCase().replace(/[^a-z0-9]/g, ''); // Bersihkan spasi/simbol
+    const text = headerName.toLowerCase().replace(/[^a-z0-9]/g, ''); 
     
     if (text.includes('mail') || text.includes('surel')) return 'email';
     if (text.includes('nama') || text.includes('name') || text.includes('lengkap')) return 'name';
     if (text.includes('role') || text.includes('peran') || text.includes('hakakses') || text.includes('jabatan') || text.includes('level')) return 'role';
+    
+    // 🔥 Deteksi Unit Kerja
+    if (text.includes('kerja') || text.includes('departemen') || text.includes('dept')) return 'unit_kerja';
+    
     if (text.includes('unit') || text.includes('divisi') || text.includes('cabang') || text.includes('penempatan')) return 'unit';
     if (text.includes('nip') || text.includes('nik') || text.includes('id') || text.includes('nomor')) return 'staff_id';
     
-    return null; // Kalau AI nyerah / gak kenal
+    return null; 
   };
 
   // 🔥 2. BACA EXCEL & JALANKAN AI
@@ -40,29 +43,25 @@ export default function ImportPegawai() {
         const workbook = XLSX.read(data, { type: 'array' });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         
-        // Ambil data mentah persis seperti di Excel
         const jsonData = XLSX.utils.sheet_to_json(worksheet);
         
         if (jsonData.length === 0) throw new Error("Excel Kosong");
 
-        // Ambil nama-nama kolom (header) dari Excel
         const headers = Object.keys(jsonData[0]);
         let mappingResult = {};
         
-        // Suruh AI menebak masing-masing header
         headers.forEach(header => {
           const guessedField = guessColumn(header);
           if (guessedField) {
-            mappingResult[guessedField] = header; // Pasangkan! (Misal: email = "Alamat Surel")
+            mappingResult[guessedField] = header; 
           }
         });
 
-        // Simpan hasil analisa
         setRawExcelData(jsonData);
         setAiMapping(mappingResult);
         
         toast.success("Analisa selesai!", { id: toastId });
-        setStep(2); // Pindah ke layar konfirmasi
+        setStep(2); 
       } catch (err) {
         toast.error("Gagal membaca file. Pastikan formatnya benar.", { id: toastId });
       } finally {
@@ -75,7 +74,6 @@ export default function ImportPegawai() {
 
   // 🔥 3. PROSES MENTRANSLATE DATA & KIRIM KE EDGE FUNCTION
   const executeImport = async () => {
-    // Validasi wajib ada email
     if (!aiMapping.email) {
       toast.error("Sistem tidak menemukan kolom Email/Surel di file Anda!");
       return;
@@ -85,16 +83,15 @@ export default function ImportPegawai() {
     const toastId = toast.loading("Memformat ulang data & mengirim ke server...");
 
     try {
-      // Sulap data Excel mentah jadi data baku yang dimengerti Backend
       const formattedUsers = rawExcelData.map(row => ({
         email: row[aiMapping.email],
         name: aiMapping.name ? row[aiMapping.name] : row[aiMapping.email].split('@')[0],
         role: aiMapping.role ? row[aiMapping.role] : 'user',
         unit: aiMapping.unit ? row[aiMapping.unit] : 'Belum Ditentukan',
+        unit_kerja: aiMapping.unit_kerja ? row[aiMapping.unit_kerja] : 'Belum Ditentukan', // 🔥 Format Unit Kerja
         staff_id: aiMapping.staff_id ? row[aiMapping.staff_id] : `BSN-AUTO-${Math.floor(Math.random()*1000)}`
       }));
 
-      // Kirim ke Edge Function
       const { data: responseData, error: functionError } = await supabase.functions.invoke('import-users', {
         body: { users: formattedUsers }
       });
@@ -113,7 +110,6 @@ export default function ImportPegawai() {
         { id: toastId, duration: 5000 }
       );
       
-      // Reset ke awal
       setStep(1);
       setRawExcelData([]);
       setAiMapping({});
@@ -139,7 +135,7 @@ export default function ImportPegawai() {
           </div>
           <h2 className="font-bold text-xl mb-2">Upload Data Bebas</h2>
           <p className="text-sm text-slate-500 mb-6 px-4">
-            Upload file Excel dari HRD. Sistem <b>Smart-Mapping</b> kami akan otomatis mencari mana kolom Nama, Email, NIP, Divisi, dll tanpa perlu format khusus!
+            Upload file Excel dari HRD. Sistem <b>Smart-Mapping</b> kami akan otomatis mencari mana kolom Nama, Email, NIP, Divisi, dan Unit Kerja tanpa perlu format khusus!
           </p>
           
           <label className={`
@@ -162,10 +158,10 @@ export default function ImportPegawai() {
       {step === 2 && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 max-w-3xl animate-in fade-in zoom-in-95 duration-300">
           <h2 className="font-bold text-lg mb-2 flex items-center gap-2 text-indigo-700">
-            <FaCheckCircle /> Hasil Analisa Otomatis
+            <FaCheckCircle /> Hasil Analisa
           </h2>
           <p className="text-sm text-slate-500 mb-6">
-            Sistem kami mendeteksi kolom berikut dari file Anda. Pastikan tebakannya benar sebelum diimport (Total {rawExcelData.length} baris).
+            Sistem kami mendeteksi kolom berikut dari file Anda. Pastikan data tersebut benar sebelum diimport (Total {rawExcelData.length} baris).
           </p>
 
           {/* TABEL PREVIEW */}
@@ -182,7 +178,8 @@ export default function ImportPegawai() {
                   { id: 'email', label: 'Email (Wajib)' },
                   { id: 'name', label: 'Nama Pegawai' },
                   { id: 'staff_id', label: 'NIP / ID Staff' },
-                  { id: 'unit', label: 'Unit / Divisi' },
+                  { id: 'unit', label: 'Unit / Cabang' },
+                  { id: 'unit_kerja', label: 'Unit Kerja' }, // 🔥 Tabel Preview Unit Kerja
                   { id: 'role', label: 'Hak Akses / Role' },
                 ].map(item => (
                   <tr key={item.id}>

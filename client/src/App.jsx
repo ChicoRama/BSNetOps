@@ -203,7 +203,7 @@ export default function App() {
               {currentView === 'manajemen-user' && <UserManagement />}
               {currentView === 'kategori-barang' && <KategoriBarang />}
               {currentView === 'penyetujuan-barang' && <PenyetujuanBarang />}
-              {currentView === 'activity-log' && <LogAktifitasAdmin />} 
+              {currentView === 'log-aktifitas' && <LogAktifitasAdmin />} 
               {currentView === 'edit-profil' && <EditProfil />}
             </DashboardLayout>
           </ProtectedRoute>

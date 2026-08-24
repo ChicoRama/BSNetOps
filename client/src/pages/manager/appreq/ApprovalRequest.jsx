@@ -77,6 +77,11 @@ export default function ApprovalRequest() {
 
       if (error) throw error;
 
+      // 🔥 1. Ambil data user_roles (Tambah nama_lengkap biar pencarian lebih kuat)
+      const { data: usersData } = await supabase
+        .from('user_roles')
+        .select('username, nama_lengkap, unit_kerja');
+
       if (data) {
         const formattedData = data.map(req => {
           const itemPriorities = req.request_items.map(i => i.prioritas || 'Rendah');
@@ -90,9 +95,20 @@ export default function ApprovalRequest() {
             mainPriority = 'Rendah'; 
           }
 
+          // 🔥 2. Pencocokan kebal huruf besar/kecil & spasi (Anti-Gagal)
+          const reqName = (req.nama_pemohon || '').trim().toLowerCase();
+          const matchedUser = usersData?.find(u => {
+            const uName = (u.username || '').trim().toLowerCase();
+            const uFullName = (u.nama_lengkap || '').trim().toLowerCase();
+            return (uName && uName === reqName) || (uFullName && uFullName === reqName);
+          });
+
+          const unitKerja = matchedUser?.unit_kerja || '-';
+
           return {
             id: req.id,
             namaPemohon: req.nama_pemohon,
+            unitKerja: unitKerja, // 🔥 Data Unit Kerja dimasukkan
             unit: req.unit,
             prioritas: mainPriority, 
             tanggal: req.tanggal,
@@ -138,9 +154,12 @@ export default function ApprovalRequest() {
   const filteredRequests = requests.filter(r => {
     const matchTab = activeTab === 'Semua' ? true : r.status?.toLowerCase() === activeTab.toLowerCase();
     const matchPriority = selectedPriority === 'Semua Prioritas' ? true : r.prioritas === selectedPriority;
+    
+    // 🔥 Search query sekarang bisa mencari berdasarkan Unit Kerja
     const matchSearch = 
       r.namaPemohon.toLowerCase().includes(searchQuery.toLowerCase()) || 
       r.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.unitKerja && r.unitKerja.toLowerCase().includes(searchQuery.toLowerCase())) ||
       r.items.some(item => item.namaBarang.toLowerCase().includes(searchQuery.toLowerCase()));
     
     return matchTab && matchPriority && matchSearch;
@@ -294,6 +313,7 @@ export default function ApprovalRequest() {
 
   const mappedFormData = activeDetail ? {
     divisi: activeDetail.unit,
+    unitKerja: activeDetail.unitKerja, // 🔥 Dikirimkan juga barangkali bon-nya butuh
     alasanDibutuhkan: activeDetail.keperluan,
     namaLengkap: activeDetail.namaPemohon,
     status: activeDetail.status,
@@ -347,7 +367,7 @@ export default function ApprovalRequest() {
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
               <input 
                 type="text" 
-                placeholder="Cari ID, pemohon, atau barang..."
+                placeholder="Cari ID, pemohon, unit kerja, atau barang..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-xs focus:outline-none focus:border-[#00664b] transition-colors"
@@ -442,12 +462,15 @@ export default function ApprovalRequest() {
                         )}
                       </td>
                       <td className="py-4 px-2 font-mono font-bold text-zinc-900">{item.id}</td>
+                      
                       <td className="py-4 px-4 max-w-[150px]">
                         <div className="flex flex-col">
                           <span className="font-bold text-zinc-800 break-words">{item.namaPemohon}</span>
-                          <span className="text-[10px] text-zinc-400 font-medium">{item.unit}</span>
+                          <span className="text-[10px] text-zinc-500 font-bold mt-0.5">{item.unitKerja !== '-' ? item.unitKerja : ''}</span>
+                          <span className="text-[9px] text-zinc-400">{item.unit}</span>
                         </div>
                       </td>
+                      
                       <td className="py-4 px-4">
                         <span className="font-semibold text-zinc-700 block truncate max-w-[200px]">
                           {item.items.map(i => i.namaBarang).join(', ')}
@@ -524,7 +547,7 @@ export default function ApprovalRequest() {
       {/* MODAL LEVEL 1: DETAIL PERMINTAAN */}
       {isModalOpen && activeDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 relative flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95 duration-200 relative flex flex-col max-h-[90vh]">
             
             <div className="flex items-center justify-between p-5 border-b border-zinc-100 bg-zinc-50/50">
               <div>
@@ -540,16 +563,21 @@ export default function ApprovalRequest() {
             </div>
 
             <div className="p-6 space-y-6 text-xs font-medium text-zinc-700 overflow-y-auto">
-              <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 gap-4">
+              
+              <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
                   <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Nama Pemohon</span>
                   <span className="text-zinc-900 font-bold text-sm break-words">{activeDetail.namaPemohon}</span>
                 </div>
                 <div>
-                  <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Unit / Cabang</span>
-                  <span className="text-zinc-900 font-bold">{activeDetail.unit}</span>
+                  <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Unit Kerja</span>
+                  <span className="text-zinc-900 font-bold text-sm">{activeDetail.unitKerja !== '-' ? activeDetail.unitKerja : 'Belum Ditentukan'}</span>
                 </div>
                 <div>
+                  <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Cabang Tujuan</span>
+                  <span className="text-zinc-900 font-bold text-sm">{activeDetail.unit}</span>
+                </div>
+                <div className="md:col-span-2">
                   <span className="block text-[10px] text-zinc-400 font-bold uppercase mb-1">Tanggal Pengajuan</span>
                   <span>{activeDetail.tanggal} ({activeDetail.jam})</span>
                 </div>
@@ -708,12 +736,17 @@ export default function ApprovalRequest() {
             
             <div className="flex-1 overflow-auto p-8 flex justify-center bg-zinc-200">
               <div className="shadow-lg border border-zinc-300 bg-white">
-                <TemplateDokumenA4 ref={printRef} formData={mappedFormData} daftarBarang={mappedDaftarBarang} />
+                <TemplateDokumenA4 
+                  ref={printRef}
+                  formData={mappedFormData} 
+                  daftarBarang={mappedDaftarBarang} 
+                />
               </div>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

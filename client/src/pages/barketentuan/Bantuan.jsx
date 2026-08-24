@@ -30,7 +30,7 @@ export default function Bantuan() {
       q: 'Bagaimana cara mendaftar akun?',
       a: 'Kunjungi halaman utama web/aplikasi, klik tombol "Sign Up". Atau saat masuk di tombol "Sign In", klik "Daftar Sekarang".'
     },
-     {
+    {
       id: 5,
       category: 'Sign In/Login',
       q: 'Bagaimana cara masuk ke akun?',
@@ -52,18 +52,11 @@ export default function Bantuan() {
     setOpenFaq(openFaq === id ? null : id);
   };
 
-  const categoryDot = {
-    Peminjaman: 'bg-sky-400',
-    Approval: 'bg-amber-400',
-    Teknis: 'bg-rose-400',
-    Pengembalian: 'bg-violet-400'
-  };
-
   return (
     <div className="w-full bg-white border border-slate-200 rounded-3xl shadow-xl shadow-slate-300/40 p-8 md:p-14">
       
       <div className="mb-10 max-w-xl mx-auto">
-        <div className="relative flex items-center bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm focus-within:border-[#00533d] focus-within:ring-4 focus-within:ring-[#00533d]/10 transition-all">
+        <div className="relative flex items-center bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm focus-within:border-[#00664b] focus-within:ring-4 focus-within:ring-[#00664b]/10 transition-all">
           <svg className="w-5 h-5 text-slate-400 shrink-0 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
           </svg>
@@ -79,28 +72,24 @@ export default function Bantuan() {
 
       <div className="space-y-12">
         
+        {/* Kontak IT Support */}
         <section>
-          <h2 className="text-lg font-bold text-slate-900 pb-2 mb-4 border-b-2 border-[#00533d]/15">
+          <h2 className="text-lg font-bold text-slate-900 pb-2 mb-4 border-b-2 border-[#00664b]/15">
             Kontak Darurat (IT Support)
           </h2>
           <div className="grid md:grid-cols-2 gap-4">
             <a 
-              href="https://mail.google.com/mail/?view=cm&fs=1&to=chicoramadhan8@gmail.com"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="mailto:inventory.bsn@gmail.com"
               className="group p-5 bg-white border border-slate-200/80 rounded-2xl shadow-sm hover:shadow-md hover:border-emerald-300 transition-all flex items-start gap-4 cursor-pointer"
             >
-              <div className="p-3 bg-emerald-50 text-[#00533d] rounded-xl group-hover:bg-[#00533d] group-hover:text-white transition-colors shrink-0">
+              <div className="p-3 bg-emerald-50 text-[#00664b] rounded-xl group-hover:bg-[#00664b] group-hover:text-white transition-colors shrink-0">
                 <Mail size={24} />
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-bold text-slate-800 text-sm group-hover:text-[#00533d] transition-colors">Email Support</h3>
-                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
-                    Tiket Bantuan
-                  </span>
-                </div>
-                <p className="text-xs font-semibold text-slate-500 mt-2">chicoramadhan8@gmail.com</p>
+                <h3 className="font-bold text-slate-800 text-sm group-hover:text-[#00664b] transition-colors">
+                  Email Support
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 mt-1">inventory.bsn@gmail.com</p>
               </div>
             </a>
 
@@ -110,24 +99,22 @@ export default function Bantuan() {
               rel="noopener noreferrer"
               className="group p-5 bg-white border border-slate-200/80 rounded-2xl shadow-sm hover:shadow-md hover:border-emerald-300 transition-all flex items-start gap-4 cursor-pointer"
             >
-              <div className="p-3 bg-emerald-50 text-[#00533d] rounded-xl group-hover:bg-[#00533d] group-hover:text-white transition-colors shrink-0">
+              <div className="p-3 bg-emerald-50 text-[#00664b] rounded-xl group-hover:bg-[#00664b] group-hover:text-white transition-colors shrink-0">
                 <MessageCircle size={24} />
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-bold text-slate-800 text-sm group-hover:text-[#00533d] transition-colors">WhatsApp Support</h3>
-                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
-                    Respon Cepat
-                  </span>
-                </div>
-                <p className="text-xs font-semibold text-slate-500 mt-2">+62 851-5777-8659</p>
+                <h3 className="font-bold text-slate-800 text-sm group-hover:text-[#00664b] transition-colors">
+                  WhatsApp Support
+                </h3>
+                <p className="text-xs font-semibold text-slate-500 mt-1">+62 851-5777-8659</p>
               </div>
             </a>
           </div>
         </section>
 
+        {/* FAQ Section */}
         <section>
-          <div className="flex items-center justify-between flex-wrap gap-3 pb-2 mb-6 border-b-2 border-[#00533d]/15">
+          <div className="flex items-center justify-between flex-wrap gap-3 pb-2 mb-6 border-b-2 border-[#00664b]/15">
             <h2 className="text-lg font-bold text-slate-900">
               Pertanyaan Sering Diajukan
             </h2>
@@ -149,16 +136,17 @@ export default function Bantuan() {
                     className="w-full flex justify-between items-center text-left gap-4 p-4 group rounded-xl hover:bg-slate-50 transition-colors cursor-pointer"
                   >
                     <span className="flex items-center gap-3">
-                      <span className={`w-2 h-2 rounded-full shrink-0 shadow-sm ${categoryDot[faq.category] || 'bg-slate-400'}`} />
-                      <span className="font-bold text-slate-700 text-sm group-hover:text-[#00533d] transition-colors">
+                      {/* Bulatan hijau #00664b seragam */}
+                      <span className="w-2 h-2 rounded-full shrink-0 shadow-sm bg-[#00664b]" />
+                      <span className="font-bold text-slate-700 text-sm group-hover:text-[#00664b] transition-colors">
                         {faq.q}
                       </span>
                     </span>
                     <span
                       className={`shrink-0 flex items-center justify-center w-6 h-6 rounded-full border text-xs font-black transition-all duration-300 ${
                         isOpen
-                          ? 'bg-[#00533d] border-[#00533d] text-white rotate-180 shadow-md'
-                          : 'border-slate-300 text-slate-400 group-hover:border-[#00533d] group-hover:text-[#00533d]'
+                          ? 'bg-[#00664b] border-[#00664b] text-white rotate-180 shadow-md'
+                          : 'border-slate-300 text-slate-400 group-hover:border-[#00664b] group-hover:text-[#00664b]'
                       }`}
                     >
                       {isOpen ? '−' : '+'}

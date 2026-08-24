@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Mail, Shield, Camera, Save, Building, Briefcase, Phone } from 'lucide-react';
+import { User, Shield, Camera, Save, Building, Briefcase, Layers } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast';
 
@@ -15,10 +15,9 @@ export default function EditProfil() {
   const [profile, setProfile] = useState({
     namaLengkap: '',
     nipPegawai: '',
-    email: '',
-    divisi: '',
-    jabatan: '',
-    noTelepon: '',
+    cabang: '',       // Untuk KC Semarang, dll (kolom 'unit' di DB)
+    unitKerja: '',    // Untuk CWO, FA & FD, dll (kolom 'unit_kerja' di DB)
+    jabatan: '',      // Untuk role (Admin/Manager/User)
     avatar: null
   });
 
@@ -52,12 +51,11 @@ export default function EditProfil() {
 
       if (data) {
         setProfile({
-          namaLengkap: data.username || data.nama_lengkap || '',
-          nipPegawai: data.staff_id || data.nip_pegawai || '-',
-          email: data.email || email,
-          divisi: data.unit || data.divisi || '',
-          jabatan: data.jabatan || (data.role ? data.role.charAt(0).toUpperCase() + data.role.slice(1) : ''),
-          noTelepon: data.no_telepon || data.phone || '',
+          namaLengkap: data.nama_lengkap || data.username || '',
+          nipPegawai: data.staff_id || '-',
+          cabang: data.unit || '',                
+          unitKerja: data.unit_kerja || '',       
+          jabatan: data.role ? data.role.charAt(0).toUpperCase() + data.role.slice(1) : 'User',
           avatar: data.avatar_url || null
         });
       }
@@ -72,6 +70,10 @@ export default function EditProfil() {
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Ukuran foto maksimal 2MB!');
+        return;
+      }
       setSelectedFile(file);
       const imageUrl = URL.createObjectURL(file);
       setProfile({ ...profile, avatar: imageUrl });
@@ -80,24 +82,22 @@ export default function EditProfil() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-
-    // 🔥 Auto-capitalize khusus untuk field nama lengkap
+    // Auto-capitalize khusus untuk field nama lengkap
     const finalValue = name === 'namaLengkap' ? toTitleCase(value) : value;
-
     setProfile(prev => ({ ...prev, [name]: finalValue }));
   };
 
-  // 2. SIMPAN PERUBAHAN KE DATABASE SUPABASE
+  // SIMPAN PERUBAHAN KE DATABASE SUPABASE
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     
-    // 🔥 Jalankan animasi loading toast
     const toastId = toast.loading('Menyimpan perubahan profil...');
 
     try {
       let avatarUrl = profile.avatar;
 
+      // Jika ada file foto baru, upload dulu ke Supabase Storage
       if (selectedFile) {
         const fileExt = selectedFile.name.split('.').pop();
         const fileName = `${userEmail.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.${fileExt}`;
@@ -116,36 +116,35 @@ export default function EditProfil() {
         avatarUrl = publicURLData.publicUrl;
       }
 
+      // Update data di tabel user_roles
       const { error: updateError } = await supabase
         .from('user_roles')
         .update({
+          nama_lengkap: profile.namaLengkap,
           username: profile.namaLengkap,
-          unit: profile.divisi,
-          jabatan: profile.jabatan,
-          no_telepon: profile.noTelepon,
+          unit: profile.cabang,             
+          unit_kerja: profile.unitKerja,    
           avatar_url: avatarUrl
         })
         .eq('email', userEmail);
 
       if (updateError) throw updateError;
 
+      // Update Session LocalStorage biar UI Header update otomatis
       localStorage.setItem('userProfile', JSON.stringify({
         email: userEmail,
         namaLengkap: profile.namaLengkap,
-        divisi: profile.divisi,
+        divisi: profile.cabang,
         jabatan: profile.jabatan,
         avatar: avatarUrl
       }));
 
-      // 🔥 Ubah loading jadi toast sukses
-      toast.success('Profil berhasil diperbarui dan tersimpan ke database!', { id: toastId });
-
+      toast.success('Profil berhasil diperbarui!', { id: toastId });
       window.dispatchEvent(new Event('profileUpdated'));
-
       fetchProfileFromSupabase();
+
     } catch (error) {
       console.error('Gagal menyimpan profil:', error.message);
-      // 🔥 Ubah loading jadi toast error
       toast.error('Gagal menyimpan: ' + error.message, { id: toastId });
     } finally {
       setSaving(false);
@@ -199,6 +198,7 @@ export default function EditProfil() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {/* ROW 1 */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Nama Lengkap</label>
               <div className="relative flex items-center">
@@ -215,13 +215,14 @@ export default function EditProfil() {
               </div>
             </div>
 
+            {/* ROW 2: CABANG & UNIT KERJA */}
             <div className="space-y-1.5">
               <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Unit / Cabang</label>
               <div className="relative flex items-center">
                 <Building size={16} className="absolute left-3 text-zinc-400 z-10 pointer-events-none" />
                 <select 
-                  name="divisi" 
-                  value={profile.divisi} 
+                  name="cabang" 
+                  value={profile.cabang} 
                   onChange={handleChange} 
                   className="w-full pl-10 pr-8 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer appearance-none" 
                   required
@@ -239,26 +240,38 @@ export default function EditProfil() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Jabatan</label>
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Divisi / Unit Kerja</label>
+              <div className="relative flex items-center">
+                <Layers size={16} className="absolute left-3 text-zinc-400 z-10 pointer-events-none" />
+                <select 
+                  name="unitKerja" 
+                  value={profile.unitKerja} 
+                  onChange={handleChange} 
+                  className="w-full pl-10 pr-8 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer appearance-none" 
+                  required
+                >
+                  <option value="" disabled hidden>Pilih Divisi</option>
+                  <option value="CWO">CWO</option>
+                  <option value="FA & FD">FA & FD</option>
+                  <option value="Accounting">Accounting</option>
+                  <option value="Operasional">Operasional</option>
+                  <option value="Teller">Teller</option>
+                  <option value="FS">FS</option>
+                  <option value="CS">CS</option>
+                  <option value="Commercial">Commercial</option>
+                  <option value="Sekretaris">Sekretaris</option>
+                  <option value="Funding">Funding</option>
+                  <option value="Consumer">Consumer</option>
+                </select>
+              </div>
+            </div>
+
+            {/* ROW 3: JABATAN (FULL WIDTH COL-SPAN-2) */}
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Jabatan / Role</label>
               <div className="relative flex items-center">
                 <Briefcase size={16} className="absolute left-3 text-zinc-400" />
-                <input type="text" name="jabatan" value={profile.jabatan} onChange={handleChange} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Alamat Email</label>
-              <div className="relative flex items-center">
-                <Mail size={16} className="absolute left-3 text-zinc-400" />
-                <input type="email" name="email" value={profile.email} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" required />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">No Telephone</label>
-              <div className="relative flex items-center">
-                <Phone size={16} className="absolute left-3 text-zinc-400" />
-                <input type="tel" name="noTelepon" value={profile.noTelepon} onChange={handleChange} placeholder="08xxxxxxxxxx" className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors" required />
+                <input type="text" name="jabatan" value={profile.jabatan} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" />
               </div>
             </div>
           </div>

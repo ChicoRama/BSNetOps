@@ -12,6 +12,7 @@ export default function EditUser({ userData, onClose, onSave }) {
     originalEmail: '', 
     role: 'User', 
     unit: 'KC Semarang',
+    unit_kerja: 'CWO', // 🔥 State default Unit Kerja
     isSuspended: false,
     isDeleted: false 
   });
@@ -30,6 +31,7 @@ export default function EditUser({ userData, onClose, onSave }) {
         originalEmail: userData.email || '', 
         role: userData.role || 'User', 
         unit: userData.unit || 'KC Semarang',
+        unit_kerja: userData.unit_kerja || 'CWO', // 🔥 Ambil data unit_kerja dari row user
         isSuspended: userData.isSuspended || false, 
         isDeleted: userData.isDeleted || false 
       });
@@ -39,7 +41,6 @@ export default function EditUser({ userData, onClose, onSave }) {
   const handleInitialSubmit = (e) => {
     e.preventDefault();
 
-    // 🔥 Kalau ada password baru, munculkan modal konfirmasi di tengah layar
     if (newPassword.trim() !== '') {
       setShowPasswordConfirm(true);
     } else {
@@ -125,6 +126,8 @@ export default function EditUser({ userData, onClose, onSave }) {
                 <option value="User">User</option>
               </select>
             </div>
+            
+            {/* 🔥 Dropdown Unit / Cabang */}
             <div>
               <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit / Cabang</label>
               <select 
@@ -142,6 +145,34 @@ export default function EditUser({ userData, onClose, onSave }) {
                 <option value="KCP Magelang">KCP Magelang</option>
               </select>
             </div>
+          </div>
+
+          {/* 🔥 Dropdown Unit Kerja Ditambahkan di Sini */}
+          <div>
+            <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit Kerja</label>
+            <select 
+              value={formData.unit_kerja} 
+              onChange={(e) => setFormData({ ...formData, unit_kerja: e.target.value })} 
+              disabled={isUpdating}
+              className="w-full px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] bg-white cursor-pointer transition-colors disabled:opacity-60"
+              required
+            >
+              <option value="" disabled hidden>Pilih Unit Kerja</option>
+              <option value="CWO">CWO</option>
+              <option value="FA & FD">FA & FD</option>
+              <option value="Accounting">Accounting</option>
+              <option value="Operasional">Operasional</option>
+              <option value="Teller">Teller</option>
+              <option value="FS">FS</option>
+              <option value="CS">CS</option>
+              <option value="Commercial">Commercial</option>
+              <option value="Sekretaris">Sekretaris</option>
+              <option value="Funding">Funding</option>
+              <option value="Consumer">Consumer</option>
+              {formData.unit_kerja && !["CWO", "FA & FD", "Accounting", "Operasional", "Teller", "FS", "CS", "Commercial", "Sekretaris", "Funding", "Consumer", ""].includes(formData.unit_kerja) && (
+                <option value={formData.unit_kerja}>{formData.unit_kerja}</option>
+              )}
+            </select>
           </div>
 
           <div>
@@ -192,7 +223,6 @@ export default function EditUser({ userData, onClose, onSave }) {
         </form>
       </div>
 
-      {/* 🔥 Modal Konfirmasi Ubah Password — tampil di tengah layar */}
       {showPasswordConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-900/60 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="w-80 bg-white shadow-2xl rounded-2xl overflow-hidden animate-in zoom-in-95 duration-150">

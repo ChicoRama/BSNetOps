@@ -134,42 +134,6 @@ export default function RiwayatPermintaan() {
     }
   };
 
-  const handleTerimaBarang = async (laporanId, itemId) => {
-    const toastId = toast.loading('Memproses konfirmasi penerimaan...');
-    try {
-      const { error } = await supabase
-        .from('request_items')
-        .update({ is_received: true }) 
-        .eq('id', itemId);
-
-      if (error) throw error;
-
-      setLaporanRiwayat(prevLaporan =>
-        prevLaporan.map(laporan => {
-          if (laporan.id === laporanId) {
-            const updatedItems = laporan.items.map(item =>
-              item.idItem === itemId ? { ...item, statusItem: 'Received' } : item
-            );
-            
-            const allDone = updatedItems.every(i => i.statusItem === 'Received' || i.statusItem === 'Rejected');
-            
-            return {
-              ...laporan,
-              items: updatedItems,
-              status: allDone ? 'Completed' : laporan.status 
-            };
-          }
-          return laporan;
-        })
-      );
-
-      toast.success('Barang berhasil dikonfirmasi diterima!', { id: toastId });
-    } catch (error) {
-      console.error("Gagal konfirmasi terima barang:", error.message);
-      toast.error("Terjadi kesalahan saat mengkonfirmasi barang.", { id: toastId });
-    }
-  };
-
   const handleDownloadPDF = () => {
     const element = printRef.current;
     if (!element) return;
@@ -351,7 +315,6 @@ export default function RiwayatPermintaan() {
                       <th className="py-3 px-4 text-center">Prioritas</th>
                       <th className="py-3 px-4 text-center">Jumlah</th>
                       <th className="py-3 px-4 text-center">Status Item</th>
-                      <th className="py-3 px-4 text-center">Aksi Penerimaan</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs md:text-sm font-semibold text-zinc-700 divide-y divide-zinc-100">
@@ -372,22 +335,9 @@ export default function RiwayatPermintaan() {
                           <div className="flex justify-center">
                             {item.statusItem === 'Pending' && <span className="text-amber-600 font-bold flex items-center gap-1 text-[11px] md:text-xs"><Clock size={12}/> Menunggu ACC</span>}
                             {item.statusItem === 'Approved' && <span className="text-blue-600 font-bold flex items-center gap-1 text-[11px] md:text-xs"><CheckCircle2 size={12}/> Siap Diambil</span>}
-                            {item.statusItem === 'Received' && <span className="text-emerald-600 font-bold flex items-center gap-1 text-[11px] md:text-xs"><PackageCheck size={12}/> Diterima</span>}
+                            {item.statusItem === 'Received' && <span className="text-emerald-600 font-bold flex items-center gap-1 text-[11px] md:text-xs"><PackageCheck size={12}/> Selesai / Diterima</span>}
                             {item.statusItem === 'Rejected' && <span className="text-red-600 font-bold flex items-center gap-1 text-[11px] md:text-xs"><XCircle size={12}/> Ditolak</span>}
                           </div>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          {item.statusItem === 'Pending' && <span className="text-zinc-400 text-[10px] italic">Menunggu persetujuan...</span>}
-                          {item.statusItem === 'Rejected' && <span className="text-zinc-400 text-[10px] italic">-</span>}
-                          {item.statusItem === 'Received' && <span className="text-[#00664b] text-[10px] font-bold">Terverifikasi ✓</span>}
-                          {item.statusItem === 'Approved' && (
-                            <button
-                              onClick={() => handleTerimaBarang(activeLaporan.id, item.idItem)}
-                              className="px-3 py-1.5 bg-[#58a27d] hover:bg-[#4a8a69] text-white text-[10px] font-bold rounded-lg transition-colors shadow-sm active:scale-95 cursor-pointer"
-                            >
-                              Barang Diterima
-                            </button>
-                          )}
                         </td>
                       </tr>
                     ))}

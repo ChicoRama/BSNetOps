@@ -22,7 +22,6 @@ serve(async (req) => {
 
     for (const user of users) {
       try {
-        // 1. Buat akun Auth (Login)
         const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: user.email,
           password: '12345678',
@@ -31,21 +30,20 @@ serve(async (req) => {
 
         if (authError) throw authError
 
-        // Bikin ID BSN otomatis jika kosong
         const generatedStaffId = user.staff_id || `BSN-${Math.floor(100 + Math.random() * 900)}`
 
-        // 2. Masukkan ke tabel public.user_roles (Sesuai kolom database aslimu!)
         const { error: dbError } = await supabaseAdmin
           .from('user_roles')
           .upsert([{
             id: authData.user.id,
             email: user.email,
-            username: user.name,          // 👈 Sesuai kolom database
-            nama_lengkap: user.name,      // 👈 Kita isi dua-duanya biar aman jaya
+            username: user.name,
+            nama_lengkap: user.name,
             role: (user.role || 'user').toLowerCase(),
-            unit: user.unit || '',
+            unit: user.unit || 'Belum Ditentukan',
+            unit_kerja: user.unit_kerja || 'Belum Ditentukan',
             staff_id: generatedStaffId,
-            is_suspended: false,          // 👈 Tipe data boolean yang benar
+            is_suspended: false,
             is_first_login: true
           }], { onConflict: 'email' })
 

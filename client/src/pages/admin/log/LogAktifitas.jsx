@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Clock, CheckCircle2, Package, Hash, Download, Calendar, ArrowDownRight, ArrowUpRight, MapPin } from 'lucide-react';
+import { Search, Clock, CheckCircle2, Package, Hash, Download, Calendar, ArrowDownRight, ArrowUpRight, MapPin, Users } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { supabase } from '../../../../supabaseClient';
@@ -36,6 +36,7 @@ export default function LogAktifitas() {
   const fetchLogs = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
+      // 1. Ambil data log
       const { data: logData, error: logError } = await supabase
         .from('activity_logs')
         .select('*')
@@ -43,9 +44,15 @@ export default function LogAktifitas() {
 
       if (logError) throw logError;
 
+      // 2. Ambil data request (untuk tahu tujuan cabang)
       const { data: reqData } = await supabase
         .from('requests')
         .select('id, unit');
+
+      // 🔥 3. Ambil data user_roles (untuk tahu Unit Kerja si pemohon)
+      const { data: usersData } = await supabase
+        .from('user_roles')
+        .select('username, unit_kerja');
 
       if (logData) {
         const formatted = logData.map(item => {
@@ -58,9 +65,14 @@ export default function LogAktifitas() {
             targetUnit = matchedRequest?.unit || item.unit || 'Kantor Cabang';
           }
 
+          // 🔥 4. Cocokkan nama pemohon dengan data user untuk dapat Unit Kerja-nya
+          const matchedUser = usersData?.find(u => u.username === item.requester);
+          const unitKerja = matchedUser?.unit_kerja || 'Belum Ditentukan';
+
           return {
             id: item.transaction_id,
             requester: item.requester,
+            unitKerja: unitKerja, // Masukkan ke data mapping
             itemName: item.item_name,
             qty: item.qty,
             dateRaw: item.created_at ? new Date(item.created_at) : new Date(),
@@ -92,16 +104,17 @@ export default function LogAktifitas() {
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('Log Aktifitas BSN');
 
-      // 1. Setup Kolom
+      // 1. Setup Kolom (🔥 Tambah Unit Kerja)
       worksheet.columns = [
         { header: 'No', key: 'no', width: 6 },
         { header: 'ID Transaksi', key: 'id', width: 22 },
         { header: 'Tanggal', key: 'tanggal', width: 18 },
         { header: 'Pemohon/Aktor', key: 'pemohon', width: 25 },
+        { header: 'Unit Kerja', key: 'unitKerja', width: 18 }, // Kolom Baru
         { header: 'Jenis', key: 'jenis', width: 12 },
         { header: 'Nama Barang', key: 'barang', width: 35 },
         { header: 'Jumlah', key: 'jumlah', width: 10 },
-        { header: 'Unit Tujuan', key: 'unit', width: 22 },
+        { header: 'Cabang Tujuan', key: 'unit', width: 22 },
         { header: 'Status', key: 'status', width: 15 }
       ];
 
@@ -111,6 +124,7 @@ export default function LogAktifitas() {
         id: item.id,
         tanggal: item.date,
         pemohon: item.requester,
+        unitKerja: item.unitKerja, // Data Baru
         jenis: item.type,
         barang: item.itemName,
         jumlah: Number(item.qty) || 0,
@@ -120,7 +134,7 @@ export default function LogAktifitas() {
 
       worksheet.addRows(exportData);
 
-      // 3. Desain Header (Warna Hijau BSN hanya sampai kolom terakhir)
+      // 3. Desain Header
       const headerRow = worksheet.getRow(1);
       headerRow.height = 25;
       headerRow.eachCell((cell) => {
@@ -144,8 +158,8 @@ export default function LogAktifitas() {
           };
           
           if (rowNumber > 1) {
-            // Kolom 4 (Pemohon), 6 (Barang), 8 (Unit) dibuat rata kiri agar enak dibaca
-            if ([4, 6, 8].includes(colNumber)) {
+            // Kolom yg rata kiri: Pemohon(4), UnitKerja(5), Barang(7), Cabang(9)
+            if ([4, 5, 7, 9].includes(colNumber)) {
               cell.alignment = { vertical: 'middle', horizontal: 'left' };
             } else {
               cell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -197,6 +211,7 @@ export default function LogAktifitas() {
       item.requester.toLowerCase().includes(query) ||
       item.itemName.toLowerCase().includes(query) ||
       item.id.toLowerCase().includes(query) ||
+      (item.unitKerja && item.unitKerja.toLowerCase().includes(query)) ||
       (item.unit && item.unit.toLowerCase().includes(query));
 
     return matchSearch;
@@ -330,8 +345,11 @@ export default function LogAktifitas() {
               <div className="flex flex-col sm:flex-row justify-between gap-3">
                 <div className="space-y-1">
                   
+                  {/* 🔥 Kalimat UI diperbarui untuk menampilkan Unit Kerja */}
                   <p className="text-xs md:text-sm text-zinc-700 leading-relaxed">
                     <span className="font-bold text-zinc-900">{item.requester}</span> 
+                    <span className="text-zinc-600"> dari unit kerja </span>
+                    <span className="font-bold text-zinc-900">{item.unitKerja}</span>
                     {item.type === 'Masuk' ? (
                       ' mendaftarkan barang masuk/restock ke dalam inventaris berupa '
                     ) : (

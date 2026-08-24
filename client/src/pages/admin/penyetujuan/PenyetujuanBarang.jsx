@@ -1,9 +1,9 @@
 import html2pdf from 'html2pdf.js';
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, CheckSquare, X, Check, MoreVertical, Download } from 'lucide-react';
+import { Search, CheckSquare, X, Check, MoreVertical, Download, X as CloseIcon } from 'lucide-react';
 import TemplateDokumenA4 from '../../user/permintaan/TemplateDokumenA4';
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
 export default function PenyetujuanBarang() {
   const printRef = useRef();
@@ -17,29 +17,23 @@ export default function PenyetujuanBarang() {
   const [showBonPreview, setShowBonPreview] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 🔥 Siapkan timer yang kebal terhadap render ulang React
   const debounceTimer = useRef(null);
 
-  // 🔥 FETCH DATA DARI SUPABASE DAN SINKRONKAN STOK GUDANG REAL-TIME DENGAN DEBOUNCE
   useEffect(() => {
     fetchRequestsFromSupabase();
 
-    // Fungsi untuk menangani perubahan dengan penunda 0.8 detik (menunggu request_items selesai di-insert)
     const handleRealtimeUpdate = (payload) => {
       console.log('Realtime mendeteksi perubahan di tabel:', payload.table);
       
-      // Bersihkan timer lama kalau ada rentetan data masuk beruntun
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current);
       }
       
-      // Setel ulang timer
       debounceTimer.current = setTimeout(() => {
         fetchRequestsFromSupabase(true);
-      }, 800); // Naikkan sedikit jadi 0.8 detik biar aman temanmu selesai nyimpan data
+      }, 800); 
     };
 
-    // Panggil tabelnya SECARA SPESIFIK satu per satu (Supabase lebih suka cara ini)
     const channel = supabase
       .channel('realtime-penyetujuan-barang')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, handleRealtimeUpdate)
@@ -51,18 +45,15 @@ export default function PenyetujuanBarang() {
         }
       });
 
-    // Bersihkan memori kalau komponen ditutup
     return () => {
       supabase.removeChannel(channel);
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
   }, []);
 
-  // 🔥 Parameter isBackground ditambahkan agar refresh dari realtime tidak menampilkan loading state
   const fetchRequestsFromSupabase = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     try {
-      // 1. Ambil data requests beserta request_items
       const { data, error } = await supabase
         .from('requests')
         .select(`
@@ -87,8 +78,12 @@ export default function PenyetujuanBarang() {
 
       if (error) throw error;
 
+      // 🔥 1. Ambil data user_roles (Ambil username dan nama_lengkap agar lebih presisi)
+      const { data: usersData } = await supabase
+        .from('user_roles')
+        .select('username, nama_lengkap, unit_kerja');
+
       if (data) {
-        // 2. Ambil seluruh data dari tabel master 'items' sekaligus untuk dicocokkan di JavaScript
         const { data: allMasterItems, error: masterError } = await supabase
           .from('items')
           .select('*');
@@ -123,9 +118,20 @@ export default function PenyetujuanBarang() {
             };
           });
 
+          // 🔥 2. Pencocokan kebal huruf besar/kecil & spasi (Anti-Gagal)
+          const reqName = (req.nama_pemohon || '').trim().toLowerCase();
+          const matchedUser = usersData?.find(u => {
+            const uName = (u.username || '').trim().toLowerCase();
+            const uFullName = (u.nama_lengkap || '').trim().toLowerCase();
+            return (uName && uName === reqName) || (uFullName && uFullName === reqName);
+          });
+
+          const unitKerja = matchedUser?.unit_kerja || '';
+
           return {
             id: req.id,
             pemohon: req.nama_pemohon,
+            unitKerja: unitKerja, // 🔥 Simpan Unit Kerja
             unit: req.unit,
             tanggal: req.tanggal,
             status: req.status,
@@ -146,10 +152,12 @@ export default function PenyetujuanBarang() {
     }
   };
 
+  // 🔥 Filter dengan dukungan pencarian Unit Kerja
   const filteredRequests = requests.filter(req =>
     req.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
     req.pemohon.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    req.unit.toLowerCase().includes(searchQuery.toLowerCase())
+    req.unit.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (req.unitKerja && req.unitKerja.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const handleReview = (req) => {
@@ -157,13 +165,11 @@ export default function PenyetujuanBarang() {
     setIsModalOpen(true);
   };
 
-  // 🔥 FUNGSI UPDATE QTY DENGAN BATASAN OTOMATIS
   const handleQtyChange = (idItem, newQty) => {
     setSelectedRequest((prev) => {
       const updatedItems = prev.items.map(item => {
         if (item.idItem === idItem) {
           let val = parseInt(newQty) || 0;
-          // Batas maksimal adalah nilai terkecil antara Jumlah Diminta dan Stok Gudang
           const maxAllowed = Math.min(item.jmlDiminta, item.stokGudang);
           
           if (val > maxAllowed) val = maxAllowed;
@@ -187,7 +193,6 @@ export default function PenyetujuanBarang() {
   };
 
   const handleApproveAndHandover = async () => {
-    // Validasi Ganda (Mencegah submit jika data diretas/error)
     const isExceedingStock = selectedRequest.items.some(item => item.jmlDisetujui > item.stokGudang);
     const isExceedingRequest = selectedRequest.items.some(item => item.jmlDisetujui > item.jmlDiminta);
     
@@ -202,8 +207,6 @@ export default function PenyetujuanBarang() {
     }
 
     const todayStr = new Date().toLocaleDateString('id-ID');
-    
-    // 🔥 Jalankan animasi loading
     const toastId = toast.loading('Memproses persetujuan...'); 
 
     try {
@@ -228,7 +231,6 @@ export default function PenyetujuanBarang() {
           .eq('id', item.idItem);
       }
 
-      // 🔥 Ubah alert jadi toast sukses
       toast.success(`Permintaan ${selectedRequest.id} disetujui & diteruskan ke Manager!`, { id: toastId });
       
       setIsModalOpen(false);
@@ -237,7 +239,6 @@ export default function PenyetujuanBarang() {
 
     } catch (error) {
       console.error('Gagal memperbarui status penyerahan:', error.message);
-      // 🔥 Ubah alert jadi toast error
       toast.error('Terjadi kesalahan saat menyimpan ke database.', { id: toastId });
     }
   };
@@ -247,7 +248,7 @@ export default function PenyetujuanBarang() {
     if (!element) return;
     setIsExporting(true);
     
-    const toastId = toast.loading('Menyiapkan file PDF...'); // 🔥 Tambahan toast pas generate PDF
+    const toastId = toast.loading('Menyiapkan file PDF...');
 
     const opt = {
       margin:       0,
@@ -260,19 +261,18 @@ export default function PenyetujuanBarang() {
     html2pdf().set(opt).from(element).save().then(() => {
       setIsExporting(false);
       setIsMenuOpen(false);
-      toast.success('PDF berhasil diunduh!', { id: toastId }); // 🔥 Sukses toast
+      toast.success('PDF berhasil diunduh!', { id: toastId }); 
     }).catch((err) => {
       console.error("Error:", err);
       setIsExporting(false);
       setIsMenuOpen(false);
-      toast.error('Gagal mengunduh PDF.', { id: toastId }); // 🔥 Error toast
+      toast.error('Gagal mengunduh PDF.', { id: toastId });
     });
   };
 
   const isApprovedByManager = selectedRequest?.status?.toLowerCase() === 'selesai';
   const isHandedOverByAdmin = selectedRequest?.isDiserahkan === true;
   
-  // Deteksi apakah status masih "menunggu" agar tombol approve bisa muncul
   const isPendingApproval = selectedRequest?.status?.toLowerCase() === 'menunggu';
 
   const qrAdmin = isHandedOverByAdmin ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Admin_Mas_Agus_ID:${selectedRequest?.id}` : null;
@@ -280,6 +280,7 @@ export default function PenyetujuanBarang() {
 
   const mappedFormData = selectedRequest ? {
     divisi: selectedRequest.unit,
+    unitKerja: selectedRequest.unitKerja, // 🔥 Dikirimkan juga ke template Bon
     alasanDibutuhkan: selectedRequest.keteranganPemohon,
     namaLengkap: selectedRequest.pemohon,
     status: selectedRequest.status,
@@ -321,7 +322,7 @@ export default function PenyetujuanBarang() {
             type="text" 
             value={searchQuery} 
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari ID, Pemohon, atau Unit..." 
+            placeholder="Cari ID, Pemohon, Unit Kerja, atau Cabang..." 
             className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b]"
           />
         </div>
@@ -334,7 +335,7 @@ export default function PenyetujuanBarang() {
             <tr>
               <th className="p-4 w-40">ID Permintaan</th>
               <th className="p-4">Pemohon</th>
-              <th className="p-4">Unit</th>
+              <th className="p-4">Cabang Tujuan</th>
               <th className="p-4">Tgl Dibutuhkan</th>
               <th className="p-4 text-center">Status</th>
               <th className="p-4 text-center">Aksi</th>
@@ -349,7 +350,15 @@ export default function PenyetujuanBarang() {
               filteredRequests.map((req) => (
                 <tr key={req.id} className="hover:bg-zinc-50/40 transition-colors">
                   <td className="p-4 font-mono text-xs font-bold text-zinc-900">{req.id}</td>
-                  <td className="p-4 font-bold text-zinc-800">{req.pemohon}</td>
+                  
+                  {/* 🔥 Tambahan Unit Kerja di bawah Nama Pemohon */}
+                  <td className="p-4">
+                    <div className="flex flex-col">
+                      <span className="font-bold text-zinc-800 break-words">{req.pemohon}</span>
+                      <span className="text-[10px] text-zinc-500 font-bold mt-0.5">{req.unitKerja !== '-' ? req.unitKerja : ''}</span>
+                    </div>
+                  </td>
+                  
                   <td className="p-4 text-zinc-600">{req.unit}</td>
                   <td className="p-4 text-zinc-600">{req.tanggal}</td>
                   <td className="p-4 text-center">
@@ -396,9 +405,12 @@ export default function PenyetujuanBarang() {
               <div className="mb-6 bg-white p-5 rounded-xl border border-zinc-200 shadow-sm flex flex-col md:flex-row justify-between gap-6">
                 <div className="flex-1">
                   <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-zinc-100 pb-2">Informasi Pemohon</h3>
+                  
+                  {/* 🔥 Grid Detail Pemohon (Update Tambah Unit Kerja) */}
                   <div className="grid grid-cols-[140px_minmax(0,1fr)] gap-y-2 text-sm text-gray-700">
                     <span className="font-medium text-zinc-500">Nama Lengkap</span><span className="font-bold text-zinc-900">: {selectedRequest.pemohon}</span>
-                    <span className="font-medium text-zinc-500">Unit / Cabang</span><span>: {selectedRequest.unit}</span>
+                    <span className="font-medium text-zinc-500">Unit Kerja</span><span className="font-bold text-zinc-900">: {selectedRequest.unitKerja}</span>
+                    <span className="font-medium text-zinc-500">Cabang Tujuan</span><span>: {selectedRequest.unit}</span>
                     <span className="font-medium text-zinc-500">Status Aksi</span><span className="font-bold text-[#00664b]">: {selectedRequest.status}</span>
                     <span className="font-medium text-zinc-500">Keterangan</span><span className="italic text-zinc-600">: {selectedRequest.keteranganPemohon || '-'}</span>
                   </div>
@@ -423,7 +435,7 @@ export default function PenyetujuanBarang() {
                   ) : (
                     <div className="w-16 h-16 flex items-center justify-center text-[10px] text-center text-zinc-400 font-mono">Belum Diserahkan</div>
                   )}
-                  <span className="text-[10px] text-zinc-700 font-mono mt-1 font-bold">Agus (Admin GA)</span>
+                  <span className="text-[10px] text-zinc-700 font-mono mt-1 font-bold">Admin</span>
                 </div>
               </div>
 
@@ -457,7 +469,6 @@ export default function PenyetujuanBarang() {
                           <input 
                             type="number" 
                             min="0"
-                            // 🔥 HTML attribute MAX juga dikunci agar tidak melebihi permintaan
                             max={Math.min(item.jmlDiminta, item.stokGudang)}
                             value={item.jmlDisetujui}
                             onChange={(e) => handleQtyChange(item.idItem, e.target.value)}
@@ -513,36 +524,18 @@ export default function PenyetujuanBarang() {
             
             <div className="px-6 py-4 bg-white border-b border-zinc-300 flex justify-between items-center z-20 shadow-sm">
               <h2 className="text-lg font-bold text-gray-800">Preview Bon Barang</h2>
-              
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <button 
-                    onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="p-1.5 text-zinc-600 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <MoreVertical size={20} />
-                  </button>
-
+                  <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-1.5 text-zinc-600 hover:bg-zinc-100 rounded-lg cursor-pointer"><MoreVertical size={20} /></button>
                   {isMenuOpen && (
-                    <div className="absolute right-0 mt-2 w-40 bg-white border border-zinc-200 rounded-xl shadow-lg py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150">
-                      <button 
-                        onClick={handleDownloadPDF}
-                        disabled={isExporting}
-                        className="w-full px-4 py-2 text-left text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer"
-                      >
-                        <Download size={14} className="text-[#00664b]" />
-                        <span>{isExporting ? 'Mengunduh...' : 'Download PDF'}</span>
+                    <div className="absolute right-0 mt-2 w-40 bg-white border border-zinc-200 rounded-xl shadow-lg py-1.5 z-30">
+                      <button onClick={handleDownloadPDF} disabled={isExporting} className="w-full px-4 py-2 text-left text-xs font-semibold hover:bg-zinc-50 flex items-center gap-2 cursor-pointer">
+                        <Download size={14} className="text-[#00664b]" /> {isExporting ? 'Mengunduh...' : 'Download PDF'}
                       </button>
                     </div>
                   )}
                 </div>
-
-                <button 
-                  onClick={() => { setShowBonPreview(false); setIsMenuOpen(false); }} 
-                  className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                >
-                  <X size={20} />
-                </button>
+                <button onClick={() => { setShowBonPreview(false); setIsMenuOpen(false); }} className="p-1.5 text-zinc-400 hover:text-red-500 rounded-lg cursor-pointer"><CloseIcon size={20} /></button>
               </div>
             </div>
             
@@ -556,7 +549,6 @@ export default function PenyetujuanBarang() {
                 />
               </div>
             </div>
-
           </div>
         </div>
       )}

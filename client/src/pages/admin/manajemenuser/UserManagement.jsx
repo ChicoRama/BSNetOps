@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit3, Trash2, Search, Filter, Shield, UserCheck, RotateCcw, XCircle, ArrowLeft, AlertTriangle } from 'lucide-react';
 import TambahUser from './TambahUser';
 import EditUser from './EditUser';
+import ImportPegawai from './ImportPegawai.jsx';
 import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast';
 
@@ -62,6 +63,7 @@ export default function UserManagement() {
           email: u.email,
           role: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Staff',
           unit: u.unit || 'KC Semarang',
+          unit_kerja: u.unit_kerja || '-', // 🔥 Tarik data unit_kerja dari Supabase
           isSuspended: u.is_suspended || false, 
           status: u.is_suspended ? 'Ditangguhkan' : 'Aktif', 
           isDeleted: u.deleted_at ? true : false,
@@ -92,6 +94,7 @@ export default function UserManagement() {
           email: updatedUser.email,
           role: updatedUser.role.toLowerCase(),
           unit: updatedUser.unit,
+          unit_kerja: updatedUser.unit_kerja, // 🔥 Simpan data unit_kerja baru kalau diedit
           is_suspended: updatedUser.isSuspended 
         })
         .eq('id', updatedUser.originalId);
@@ -201,13 +204,21 @@ export default function UserManagement() {
     });
   };
 
-  const processedUsers = users
+const processedUsers = users
     .filter(user => user.isDeleted === showTrash)
     .filter(user => (roleFilter === 'Semua' ? true : user.role === roleFilter))
     .filter(user => {
-      const query = searchQuery.toLowerCase();
-      // 🔥 Pencarian sekarang cuma fokus ke Nama Staff saja (Email dihilangkan)
-      return user.name.toLowerCase().includes(query);
+      // 🔥 .trim() buat ngilangin spasi gaib di awal/akhir ketikan
+      const query = searchQuery.toLowerCase().trim(); 
+      
+      // 🔥 Dibungkus String() semua biar pasti jadi teks, baru di-toLowerCase()
+      const matchName = String(user.name).toLowerCase().includes(query);
+      const matchUnitKerja = String(user.unit_kerja || '').toLowerCase().includes(query);
+      const matchUnit = String(user.unit || '').toLowerCase().includes(query);
+      const matchId = String(user.id || '').toLowerCase().includes(query);
+
+      // Kalau salah satu cocok, tampilin datanya!
+      return matchName || matchUnitKerja || matchUnit || matchId;
     });
 
   return (
@@ -263,7 +274,7 @@ export default function UserManagement() {
             type="text" 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari nama staff..." 
+            placeholder="Cari nama staff atau unit kerja..." 
             className="w-full pl-10 pr-4 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#00664b] focus:bg-white transition-colors"
           />
         </div>
@@ -289,7 +300,8 @@ export default function UserManagement() {
               <tr className="bg-[#58a27d] border-[#58a27d] text-white text-xs uppercase font-semibold tracking-wider border-b">
                 <th className="p-4 rounded-tl-xl">ID User</th>
                 <th className="p-4">Nama Lengkap</th>
-                {/* 🔥 Header Email Resmi dihapus */}
+                {/* 🔥 Tambah Unit Kerja di Header Tabel */}
+                <th className="p-4">Unit Kerja</th>
                 <th className="p-4">Hak Akses</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-right rounded-tr-xl">Aksi Kontrol</th>
@@ -298,13 +310,13 @@ export default function UserManagement() {
             <tbody className="divide-y">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
+                  <td colSpan={6} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
                     Memuat data dari database...
                   </td>
                 </tr>
               ) : processedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
+                  <td colSpan={6} className="p-12 text-center text-zinc-400 font-medium bg-zinc-50/30">
                     {showTrash 
                       ? "Keranjang sampah kosong." 
                       : "Tidak ditemukan data user yang cocok dengan kriteria pencarian."}
@@ -315,7 +327,10 @@ export default function UserManagement() {
                   <tr key={user.originalId} className="hover:bg-zinc-50/40 transition-colors">
                     <td className="p-4 font-mono text-xs font-bold text-zinc-900 bg-zinc-50/30">{user.id}</td>
                     <td className="p-4 font-semibold text-zinc-900">{user.name}</td>
-                    {/* 🔥 Kolom Email Resmi dihapus */}
+                    
+                    {/* 🔥 Isi Kolom Unit Kerja */}
+                    <td className="p-4 text-zinc-600 font-medium">{user.unit_kerja}</td>
+
                     <td className="p-4">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold ${
                         user.role === 'Admin' 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Filter, Calendar, Package, X, Check, ShoppingCart } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
-import toast from 'react-hot-toast'; // 🔥 Import Toast
+import toast from 'react-hot-toast';
 
 export default function Aset({ setCurrentView }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,6 +82,9 @@ export default function Aset({ setCurrentView }) {
     localStorage.setItem('selectedAssetData', JSON.stringify(cart));
   }, [cart]);
 
+  // 🔥 AMBIL DAFTAR KATEGORI SECARA DINAMIS DARI DATABASE
+  const availableCategories = Array.from(new Set(katalogAset.map(aset => aset.kategori))).sort();
+
   // LOGIKA FILTERING
   const filteredAset = katalogAset.filter(aset => {
     const matchesSearch = aset.nama.toLowerCase().includes(searchQuery.toLowerCase());
@@ -124,7 +127,6 @@ export default function Aset({ setCurrentView }) {
     if (cart.length > 0) {
       setCurrentView('ajukan-permintaan');
     } else {
-      // 🔥 Ganti alert standar dengan toast.error
       toast.error("Keranjang belanja Anda masih kosong. Silakan pilih aset terlebih dahulu!");
     }
   };
@@ -203,7 +205,9 @@ export default function Aset({ setCurrentView }) {
               <hr className="border-zinc-100 my-1.5" />
               <div className="space-y-0.5">
                 <div className="px-2.5 py-1 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Kategori</div>
-                {['ATK', 'Elektronik'].map((kat) => (
+                
+                {/* 🔥 LOOPING KATEGORI DINAMIS DARI DATABASE */}
+                {availableCategories.map((kat) => (
                   <button
                     key={kat}
                     onClick={() => {
