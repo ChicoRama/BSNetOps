@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, AlertTriangle, KeyRound } from 'lucide-react';
+import { X, Check, AlertTriangle, KeyRound, RotateCcw } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient';
 import toast from 'react-hot-toast';
 
@@ -12,7 +12,7 @@ export default function EditUser({ userData, onClose, onSave }) {
     originalEmail: '', 
     role: 'User', 
     unit: 'KC Semarang',
-    unit_kerja: 'CWO', // 🔥 State default Unit Kerja
+    unit_kerja: 'CWO',
     isSuspended: false,
     isDeleted: false 
   });
@@ -21,27 +21,54 @@ export default function EditUser({ userData, onClose, onSave }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
 
-  useEffect(() => {
+useEffect(() => {
     if (userData) {
+      // 🔥 Paksa ambil email dari userData, kalau kosong fallback ke email kamu
+      const resolvedEmail = userData.email || userData.mail || userData.originalEmail || 'chicoramadhan8@gmail.com';
+
       setFormData({
         id: userData.id || '',
         originalId: userData.originalId || '',
         name: userData.name || '',
-        email: userData.email || '',
-        originalEmail: userData.email || '', 
+        email: resolvedEmail,
+        originalEmail: resolvedEmail, 
         role: userData.role || 'User', 
         unit: userData.unit || 'KC Semarang',
-        unit_kerja: userData.unit_kerja || 'CWO', // 🔥 Ambil data unit_kerja dari row user
+        unit_kerja: userData.unit_kerja || 'CWO', 
         isSuspended: userData.isSuspended || false, 
         isDeleted: userData.isDeleted || false 
       });
     }
   }, [userData]);
 
+  const fetchEmailFromDB = async (identifier) => {
+    try {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .select('email')
+        .or(`staff_id.eq.${identifier},nama_lengkap.eq.${identifier},username.eq.${identifier}`)
+        .maybeSingle();
+
+      if (data && data.email) {
+        setFormData(prev => ({
+          ...prev,
+          email: data.email,
+          originalEmail: data.email
+        }));
+      }
+    } catch (err) {
+      console.error("Gagal menarik email otomatis:", err);
+    }
+  };
+
   const handleInitialSubmit = (e) => {
     e.preventDefault();
 
     if (newPassword.trim() !== '') {
+      if (!formData.email && !formData.originalEmail) {
+        toast.error("Email user tidak ditemukan! Tidak bisa mengganti password.");
+        return;
+      }
       setShowPasswordConfirm(true);
     } else {
       executeSave();
@@ -53,20 +80,31 @@ export default function EditUser({ userData, onClose, onSave }) {
     const toastId = toast.loading('Menyimpan pembaruan akun...');
 
     try {
+      let isPasswordChanged = false; 
+
       if (newPassword.trim() !== '') {
+        const targetEmail = (formData.email || formData.originalEmail || '').trim();
+        
+        if (!targetEmail) {
+          throw new Error("Email user kosong! Sistem Auth butuh email valid.");
+        }
+
         const { data, error } = await supabase.functions.invoke('update-user-password', {
           body: { 
-            email: formData.originalEmail.trim(), 
+            email: targetEmail, 
             newPassword: newPassword.trim() 
           }
         });
 
         if (error) throw error;
         if (data && data.error) throw new Error(data.error);
+        
+        isPasswordChanged = true; 
       }
 
       toast.success(`Data akun ${formData.name} berhasil diperbarui!`, { id: toastId });
-      onSave(formData);
+      
+      onSave({ ...formData, isPasswordChanged });
 
     } catch (err) {
       console.error('Error memproses update:', err);
@@ -108,8 +146,17 @@ export default function EditUser({ userData, onClose, onSave }) {
             />
           </div>
 
-          <div className="hidden">
-            <input type="email" value={formData.email} disabled />
+          <div>
+            <label className="block text-sm font-semibold text-zinc-700 mb-1">Email Sistem (Auth)</label>
+            <input 
+              type="email" 
+              required
+              value={formData.email} 
+              onChange={(e) => setFormData({ ...formData, email: e.target.value, originalEmail: e.target.value })} 
+              disabled={isUpdating}
+              placeholder="Contoh: manager@bsn.local"
+              className="w-full px-4 py-2.5 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-700 font-mono focus:outline-none focus:border-[#00664b] focus:bg-white transition-colors disabled:opacity-60" 
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -127,7 +174,6 @@ export default function EditUser({ userData, onClose, onSave }) {
               </select>
             </div>
             
-            {/* 🔥 Dropdown Unit / Cabang */}
             <div>
               <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit / Cabang</label>
               <select 
@@ -147,7 +193,6 @@ export default function EditUser({ userData, onClose, onSave }) {
             </div>
           </div>
 
-          {/* 🔥 Dropdown Unit Kerja Ditambahkan di Sini */}
           <div>
             <label className="block text-sm font-semibold text-zinc-700 mb-1">Unit Kerja</label>
             <select 
@@ -158,6 +203,7 @@ export default function EditUser({ userData, onClose, onSave }) {
               required
             >
               <option value="" disabled hidden>Pilih Unit Kerja</option>
+              <option value="Admin">Admin</option>
               <option value="CWO">CWO</option>
               <option value="FA & FD">FA & FD</option>
               <option value="Accounting">Accounting</option>
@@ -169,7 +215,7 @@ export default function EditUser({ userData, onClose, onSave }) {
               <option value="Sekretaris">Sekretaris</option>
               <option value="Funding">Funding</option>
               <option value="Consumer">Consumer</option>
-              {formData.unit_kerja && !["CWO", "FA & FD", "Accounting", "Operasional", "Teller", "FS", "CS", "Commercial", "Sekretaris", "Funding", "Consumer", ""].includes(formData.unit_kerja) && (
+              {formData.unit_kerja && !["Admin", "CWO", "FA & FD", "Accounting", "Operasional", "Teller", "FS", "CS", "Commercial", "Sekretaris", "Funding", "Consumer", ""].includes(formData.unit_kerja) && (
                 <option value={formData.unit_kerja}>{formData.unit_kerja}</option>
               )}
             </select>
@@ -191,14 +237,28 @@ export default function EditUser({ userData, onClose, onSave }) {
           </div>
 
           <div className="pt-4 border-t border-zinc-200 mt-2">
-            <label className="block text-sm font-bold text-red-600 mb-1">Reset Password (Opsional)</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="text-sm font-bold text-red-600">Reset Password (Opsional)</label>
+              {/* 🔥 TOMBOL CEPAT RESET KE 12345678 */}
+              <button
+                type="button"
+                onClick={() => {
+                  setNewPassword('12345678');
+                  toast.success('Password di-set ke default: 12345678');
+                }}
+                disabled={isUpdating}
+                className="text-xs font-semibold text-[#00664b] hover:text-[#004d38] flex items-center gap-1 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
+              >
+                <RotateCcw size={12} /> Default (12345678)
+              </button>
+            </div>
             <p className="text-[11px] text-zinc-500 mb-2">Kosongkan kolom ini jika Anda tidak ingin merubah password user.</p>
             <input 
               type="text" 
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               disabled={isUpdating}
-              placeholder="Ketik password baru..." 
+              placeholder="Ketik password baru atau klik tombol Default..." 
               className="w-full px-4 py-2.5 bg-red-50/30 border border-red-200 rounded-lg text-sm focus:outline-none focus:border-red-500 focus:bg-white transition-colors disabled:opacity-60" 
             />
           </div>

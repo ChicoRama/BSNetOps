@@ -15,25 +15,43 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     
-    // Kunci sakti (Service Role) buat nembus keamanan Supabase
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Server Environment Variables (URL/ServiceKey) belum diset!")
+    }
+
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
-    const { email, newPassword } = await req.json()
+    const body = await req.json()
+    console.log("Payload diterima di Edge Function:", body)
+
+    const { email, newPassword } = body
 
     if (!email || !newPassword) {
       throw new Error("Email dan Password baru wajib dikirim!")
     }
 
-    // 1. Cari User ID berdasarkan email (siluman)
-    const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers()
-    if (listError) throw listError
-    
-    const userToUpdate = users.users.find(u => u.email === email)
+    const cleanEmail = email.trim().toLowerCase()
+
+    // 🔥 CARI USER LANGSUNG BERDASARKAN EMAIL DI AUTH (TANPA BATASAN LIST)
+    // Catatan: Sebagian versi supabase-js menggunakan getUserByEmail atau listUsers dengan filter.
+    // Kita gunakan cara paling aman dengan mencari user via listUsers dengan parameter tambahan atau mencocokkan UUID jika ada.
+    // Alternatif paling aman di Deno v2:
+    const { data: userData, error: findError } = await supabaseAdmin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000 // Tarik sampai 1000 user pertama biar tidak terlewat
+    })
+
+    if (findError) throw findError
+
+    const userToUpdate = userData.users.find(u => u.email?.trim().toLowerCase() === cleanEmail)
+
     if (!userToUpdate) {
-      throw new Error("User tidak ditemukan di sistem Auth!")
+      throw new Error(`User dengan email '${cleanEmail}' benar-benar tidak ditemukan di Auth!`)
     }
 
-    // 2. Paksa ganti password pakai Kunci Sakti
+    console.log(`User ditemukan! ID: ${userToUpdate.id}, Mengupdate password...`)
+
+    // 🔥 PAKSA UPDATE PASSWORD BERDASARKAN ID USER YANG KETEMU
     const { data, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
       userToUpdate.id,
       { password: newPassword }
@@ -47,6 +65,7 @@ serve(async (req) => {
     )
 
   } catch (error) {
+    console.error("Error tertangkap di Edge Function:", error.message)
     return new Response(
       JSON.stringify({ error: error.message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }

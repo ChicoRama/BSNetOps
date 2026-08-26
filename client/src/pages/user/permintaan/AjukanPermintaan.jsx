@@ -41,7 +41,7 @@ export default function AjukanPermintaan() {
     // PENGAMANAN: Pastikan data diri (identitas) SELALU ADA dan tidak ketimpa draft kosong
     const baseProfileData = {
       namaLengkap: activeUser.namaLengkap || activeUser.name || activeUser.username || '',
-      email: activeUser.email || '', // Tetap disimpan di background untuk database
+      email: activeUser.email || '', 
       nipPegawai: activeUser.nip || activeUser.staff_id || '',
       divisi: activeUser.unit || activeUser.divisi || '',
       jabatan: activeUser.role || activeUser.jabatan || '',
@@ -306,7 +306,7 @@ export default function AjukanPermintaan() {
           {
             id: generatedId,
             nama_pemohon: formData.namaLengkap,
-            email_pemohon: formData.email, // Email dikirim ke database saja, tidak tampil di UI
+            email_pemohon: formData.email, 
             unit: formData.divisi,
             tanggal: formData.tanggalDibutuhkan,
             jam: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
@@ -333,6 +333,27 @@ export default function AjukanPermintaan() {
 
       if (itemsError) throw itemsError;
 
+      // 🔥 CATAT KE ACTIVITY LOGS DENGAN STATUS "PENDING"
+      const logsToInsert = daftarBarang.map(b => ({
+        transaction_id: generatedId,
+        requester: formData.namaLengkap,
+        item_name: b.namaAset,
+        qty: Number(b.jumlah) || 1,
+        type: 'Keluar',
+        status: 'Pending',
+        date: new Date().toISOString().split('T')[0]
+      }));
+
+      const { error: logsError } = await supabase
+        .from('activity_logs')
+        .insert(logsToInsert);
+
+      if (logsError) {
+        console.error("Gagal mencatat log aktivitas:", logsError.message);
+        // Kita ngga throw error di sini biar permintaan tetap jalan meskipun lognya gagal
+      }
+
+      // Notifikasi Admin & Manager
       try {
         const { data: staffList, error: staffError } = await supabase
           .from('user_roles')
@@ -358,7 +379,6 @@ export default function AjukanPermintaan() {
 
       toast.success('Pengajuan permintaan berhasil dikirim!', { id: toastId });
       
-      // Penghapusan draft karena sudah sukses tersimpan
       localStorage.removeItem('draft_ajukan_permintaan');
       setCurrentStep(4);
 

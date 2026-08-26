@@ -11,9 +11,9 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const [form, setForm] = useState({
-    username: "", 
+    username: "",
     password: "",
-    remember: false,
+    remember: false,  
   });
 
   const [error, setError] = useState({
@@ -268,14 +268,14 @@ export default function LoginPage() {
               {/* NAMA / USERNAME */}
               <div>
                 <label className="mb-1.5 block text-xs font-bold text-slate-800">
-                  Nama Karyawan / ID Pegawai
+                  Nama Karyawan
                 </label>
                 <input
                   type="text" 
                   name="username" 
                   value={form.username}
                   onChange={handleChange}
-                  placeholder="Diar Ramadhan"
+                  placeholder="Chico Diar Ramadhan"
                   className="w-full rounded-xl bg-[#f0f4f8] px-4 py-3 text-sm font-medium text-slate-800 outline-none focus:ring-2 focus:ring-[#00634b]/30 transition-all border border-transparent focus:border-[#00634b]/50"
                 />
                 {error.username && (
@@ -382,7 +382,7 @@ export default function LoginPage() {
               className="w-full flex items-center justify-center gap-2 cursor-pointer rounded-xl bg-[#00634b] py-3.5 text-sm font-bold text-white shadow-md hover:shadow-lg transition-all active:scale-95 hover:bg-[#004d3a]"
             >
               <FaWhatsapp className="text-xl" /> 
-              <span>Hubungi Administrator</span>
+              <span>Hubungi Admin</span>
             </a>
 
             <button

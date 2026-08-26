@@ -63,7 +63,7 @@ export default function UserManagement() {
           email: u.email,
           role: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Staff',
           unit: u.unit || 'KC Semarang',
-          unit_kerja: u.unit_kerja || '-', // 🔥 Tarik data unit_kerja dari Supabase
+          unit_kerja: u.unit_kerja || '-', 
           isSuspended: u.is_suspended || false, 
           status: u.is_suspended ? 'Ditangguhkan' : 'Aktif', 
           isDeleted: u.deleted_at ? true : false,
@@ -87,16 +87,25 @@ export default function UserManagement() {
   const handleUpdateUser = async (updatedUser) => {
     const toastId = toast.loading('Memperbarui data akun...');
     try {
+      // 🔥 Siapkan payload update
+      const updatePayload = {
+        username: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role.toLowerCase(),
+        unit: updatedUser.unit,
+        unit_kerja: updatedUser.unit_kerja, 
+        is_suspended: updatedUser.isSuspended 
+      };
+
+      // 🔥 LOGIKA RESET FIRST LOGIN
+      // Kalau dapet sinyal passwordnya habis diubah admin, paksa user ganti password!
+      if (updatedUser.isPasswordChanged) {
+        updatePayload.is_first_login = true; 
+      }
+
       const { error } = await supabase
         .from('user_roles')
-        .update({
-          username: updatedUser.name,
-          email: updatedUser.email,
-          role: updatedUser.role.toLowerCase(),
-          unit: updatedUser.unit,
-          unit_kerja: updatedUser.unit_kerja, // 🔥 Simpan data unit_kerja baru kalau diedit
-          is_suspended: updatedUser.isSuspended 
-        })
+        .update(updatePayload)
         .eq('id', updatedUser.originalId);
 
       if (error) throw error;
@@ -208,16 +217,13 @@ const processedUsers = users
     .filter(user => user.isDeleted === showTrash)
     .filter(user => (roleFilter === 'Semua' ? true : user.role === roleFilter))
     .filter(user => {
-      // 🔥 .trim() buat ngilangin spasi gaib di awal/akhir ketikan
       const query = searchQuery.toLowerCase().trim(); 
       
-      // 🔥 Dibungkus String() semua biar pasti jadi teks, baru di-toLowerCase()
       const matchName = String(user.name).toLowerCase().includes(query);
       const matchUnitKerja = String(user.unit_kerja || '').toLowerCase().includes(query);
       const matchUnit = String(user.unit || '').toLowerCase().includes(query);
       const matchId = String(user.id || '').toLowerCase().includes(query);
 
-      // Kalau salah satu cocok, tampilin datanya!
       return matchName || matchUnitKerja || matchUnit || matchId;
     });
 
@@ -300,7 +306,6 @@ const processedUsers = users
               <tr className="bg-[#58a27d] border-[#58a27d] text-white text-xs uppercase font-semibold tracking-wider border-b">
                 <th className="p-4 rounded-tl-xl">ID User</th>
                 <th className="p-4">Nama Lengkap</th>
-                {/* 🔥 Tambah Unit Kerja di Header Tabel */}
                 <th className="p-4">Unit Kerja</th>
                 <th className="p-4">Hak Akses</th>
                 <th className="p-4">Status</th>
@@ -327,14 +332,13 @@ const processedUsers = users
                   <tr key={user.originalId} className="hover:bg-zinc-50/40 transition-colors">
                     <td className="p-4 font-mono text-xs font-bold text-zinc-900 bg-zinc-50/30">{user.id}</td>
                     <td className="p-4 font-semibold text-zinc-900">{user.name}</td>
-                    
-                    {/* 🔥 Isi Kolom Unit Kerja */}
                     <td className="p-4 text-zinc-600 font-medium">{user.unit_kerja}</td>
-
                     <td className="p-4">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold ${
                         user.role === 'Admin' 
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                          : user.role === 'Manager'
+                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
                           : 'bg-blue-50 text-blue-700 border border-blue-200'
                       }`}>
                         {user.role === 'Admin' ? <Shield size={12} /> : <UserCheck size={12} />}

@@ -70,15 +70,15 @@ export default function TambahItem({ onClose, onSuccess }) {
     try {
       const trimmedName = formData.name.trim();
 
-      // 🔥 Logika Cek Duplikasi Nama Barang
+      // 🔥 Cek Duplikasi Nama Barang
       const { data: existingItems, error: checkError } = await supabase
         .from('items')
         .select('name')
         .ilike('name', trimmedName);
 
-      if (checkError) throw checkError;
+      if (checkError) throw new Error(`Gagal cek duplikasi: ${checkError.message}`);
       if (existingItems && existingItems.length > 0) {
-        throw new Error(`Barang dengan nama "${trimmedName}" sudah terdaftar di gudang!`);
+        throw new Error(`Barang dengan nama "${trimmedName}" sudah terdaftar!`);
       }
 
       const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, ''); 
@@ -92,7 +92,7 @@ export default function TambahItem({ onClose, onSuccess }) {
         .order('id', { ascending: false })
         .limit(1);
 
-      if (fetchError) throw fetchError;
+      if (fetchError) throw new Error(`Gagal generate ID: ${fetchError.message}`);
 
       let nextSequence = 1;
       if (lastItems && lastItems.length > 0) {
@@ -111,7 +111,7 @@ export default function TambahItem({ onClose, onSuccess }) {
       const jumlahStok = parseInt(formData.stock) || 0;
       let imageUrl = null;
 
-      // Upload Gambar (Jika Ada)
+      // 🔥 Upload Gambar (Jika Ada)
       if (formData.image) {
         const file = formData.image;
         const fileExt = file.name.split('.').pop();
@@ -122,7 +122,7 @@ export default function TambahItem({ onClose, onSuccess }) {
           .from('items-bucket') 
           .upload(filePath, file);
 
-        if (uploadError) throw uploadError;
+        if (uploadError) throw new Error(`Gagal upload foto: ${uploadError.message}`);
 
         const { data: publicURLData } = supabase.storage
           .from('items-bucket')
@@ -131,7 +131,7 @@ export default function TambahItem({ onClose, onSuccess }) {
         imageUrl = publicURLData.publicUrl;
       }
 
-      // Insert ke tabel items
+      // 🔥 1. Insert ke tabel items
       const { error: itemError } = await supabase
         .from('items')
         .insert([
@@ -148,9 +148,9 @@ export default function TambahItem({ onClose, onSuccess }) {
           }
         ]);
 
-      if (itemError) throw itemError;
+      if (itemError) throw new Error(`Gagal simpan item: ${itemError.message}`);
 
-      // Catat stok awal ke tabel stock_in
+      // 🔥 2. Catat stok awal ke tabel stock_in
       if (jumlahStok > 0) {
         const { error: stockInError } = await supabase
           .from('stock_in')
@@ -162,38 +162,41 @@ export default function TambahItem({ onClose, onSuccess }) {
             }
           ]);
 
-        if (stockInError) {
-          console.error('Gagal mencatat stok awal ke stock_in:', stockInError.message);
-        }
+        if (stockInError) throw new Error(`Gagal simpan stock_in: ${stockInError.message}`);
+        
+        // 🔥 3. Insert ke activity_logs
+        let activeUser = {};
+        try {
+          activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
+        } catch (err) {}
+        
+        const username = activeUser?.namaLengkap || activeUser?.name || 'Admin Gudang';
+
+        const { error: logError } = await supabase
+          .from('activity_logs')
+          .insert([
+            {
+              transaction_id: `IN-${generatedId}`, 
+              requester: username,
+              item_name: trimmedName,
+              qty: jumlahStok,
+              type: 'Masuk',
+              status: 'Approved', // 🔥 UDAH DIGANTI JADI APPROVED BIAR MATCH SAMA FILTER
+              date: formData.date
+            }
+          ]);
+
+        if (logError) throw new Error(`Tabel activity_logs error: ${logError.message}`);
       }
 
-      // Insert ke activity_logs
-      const { error: logError } = await supabase
-        .from('activity_logs')
-        .insert([
-          {
-            transaction_id: generatedId,
-            requester: 'Admin Gudang',
-            item_name: trimmedName,
-            qty: jumlahStok,
-            type: 'Masuk',
-            status: 'Selesai',
-            manager_status: 'Approved',
-            admin_status: 'Selesai',
-            date: formData.date
-          }
-        ]);
-
-      if (logError) throw logError;
-
-      toast.success(`Barang "${trimmedName}" berhasil ditambahkan dengan kode ${generatedId}!`, { id: toastId });
+      toast.success(`Barang "${trimmedName}" berhasil ditambahkan!`, { id: toastId });
       
       if (onSuccess) onSuccess();
       onClose();
 
     } catch (error) {
       console.error('Gagal menyimpan:', error.message);
-      toast.error(error.message, { id: toastId });
+      toast.error(error.message, { id: toastId, duration: 8000 }); 
     } finally {
       setLoading(false);
     }

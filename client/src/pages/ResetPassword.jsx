@@ -23,7 +23,6 @@ export default function ResetPassword() {
     general: "",
   });
 
-  // 🔥 CEK SESI LOGIN
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -105,7 +104,7 @@ export default function ResetPassword() {
         localStorage.setItem("userProfile", JSON.stringify(updatedProfile));
       }
 
-      toast.success("Password berhasil diubah! Mengalihkan ke Dashboard...", { id: toastId, duration: 3000 });
+      toast.success("Password berhasil diubah! Mengalihkan ke Dashboard.", { id: toastId, duration: 3000 });
 
       setTimeout(() => {
         const role = (userData?.role || 'user').toLowerCase();

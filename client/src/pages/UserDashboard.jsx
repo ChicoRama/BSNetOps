@@ -32,13 +32,39 @@ export default function UserDashboard({ setCurrentView }) {
     if (!isBackground) setIsLoading(true);
 
     try {
-      const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession'));
-      const userEmail = activeUser?.email || activeUser?.mail || '';
+      const activeUser = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
       
-      const fullName = activeUser?.namaLengkap || activeUser?.name || 'User';
+      // 🔥 Ambil kunci identitas apa saja yang tersedia dari sesi
+      const identifier = activeUser?.email || activeUser?.mail || activeUser?.username || activeUser?.namaLengkap;
+      
+      // 🔥 Masukin 'username' ke prioritas tarikan data
+      let fullName = activeUser?.username || activeUser?.namaLengkap || activeUser?.name || 'User';
+      let userEmail = activeUser?.email || activeUser?.mail || '';
+
+      // 🔥 1. AMBIL NAMA ASLI DARI DATABASE (Biar 100% Valid)
+      if (identifier) {
+        const { data: userData } = await supabase
+          .from('user_roles')
+          .select('username, email')
+          .or(`email.eq.${identifier},username.eq.${identifier}`)
+          .maybeSingle();
+
+        if (userData) {
+          if (userData.username) fullName = userData.username;
+          if (userData.email) userEmail = userData.email; // Sinkronisasi email asli
+        }
+      }
+
+      // 🔥 2. JAGA-JAGA: Kalau entah kenapa masih format email, potong tulisan '@...'-nya
+      if (fullName.includes('@')) {
+        fullName = fullName.split('@')[0];
+      }
+
+      // Ambil nama panggilan (kata pertama saja)
       const firstName = fullName.split(' ')[0];
       setUserName(firstName);
 
+      // Lanjut ambil data request terakhir
       if (!userEmail) {
         if (!isBackground) setIsLoading(false);
         return;
@@ -69,7 +95,6 @@ export default function UserDashboard({ setCurrentView }) {
         let step = 1;
         let statusText = 'Dalam Proses (Pending)';
 
-        // 🔥 LOGIKA STEPPER BARU: Kalau Manager ACC, otomatis langsung Selesai (Step 3)
         if (rawStatus.includes('ditolak')) {
           step = -1;
           statusText = 'Ditolak';
@@ -89,7 +114,6 @@ export default function UserDashboard({ setCurrentView }) {
           barangValue += `, +${sisaBarang} lainnya`;
         }
 
-        // Format tanggal jadi "23 Agustus 2026"
         const rawDate = new Date(reqData.tanggal || Date.now());
         const tglFormat = rawDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 
@@ -103,7 +127,7 @@ export default function UserDashboard({ setCurrentView }) {
           steps: [
             { id: 1, name: 'Permintaan Diajukan', sub: 'Menunggu Validasi Admin' },
             { id: 2, name: 'Persetujuan Manajer', sub: 'Proses Review Manager' },
-            { id: 3, name: 'Barang Selesai', sub: 'Disetujui Manager' } // 🔥 Ubah deskripsi step 3
+            { id: 3, name: 'Barang Selesai', sub: 'Disetujui Manager' } 
           ]
         });
       } else {
@@ -123,7 +147,6 @@ export default function UserDashboard({ setCurrentView }) {
       return <span className="text-xs font-semibold px-2.5 py-1 bg-red-100 text-red-800 rounded-md">Ditolak</span>;
     }
     if (step === 3) {
-      // 🔥 Ubah label lencana kalau Step 3
       return <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-md">Disetujui / Selesai</span>;
     }
     if (step === 2) {
@@ -137,7 +160,7 @@ export default function UserDashboard({ setCurrentView }) {
       
       {/* 1. Header Sapaan */}
       <div className="bg-gradient-to-r from-[#00664b] to-[#004d38] p-6 text-white rounded-xl shadow-md border border-[#00553e] transition-all hover:scale-[1.005]">
-        <h2 className="text-2xl font-bold">
+        <h2 className="text-2xl font-bold capitalize">
           Halo, {userName} 👋
         </h2>
         <p className="text-green-100 text-sm mt-1">Mau ambil atau cek inventaris barang apa hari ini? Semangat ya!</p>
@@ -245,7 +268,7 @@ export default function UserDashboard({ setCurrentView }) {
                 <div className="hidden md:block absolute left-10 right-10 top-3 h-[2px] bg-zinc-200 -z-10" />
 
                 {lastRequest.steps.map((step, index) => {
-                  const isCompleted = step.id <= lastRequest.currentStep; // 🔥 Ubah ini biar hijau semua kalau Selesai
+                  const isCompleted = step.id <= lastRequest.currentStep; 
                   const isCurrent = step.id === lastRequest.currentStep;
 
                   return (

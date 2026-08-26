@@ -71,15 +71,16 @@ export default function ActivityLog() {
           const matchedUser = usersData?.find(u => u.username === item.requester);
           const unitKerja = matchedUser?.unit_kerja || 'Belum Ditentukan';
 
-          let mappedStatus = 'Disetujui';
+          // 🔥 KEMBALI KE SETELAN PABRIK: APPROVED / PENDING / REJECTED
+          let mappedStatus = 'Approved';
           const rawStatus = (item.status || '').toLowerCase();
           
           if (rawStatus.includes('menunggu') || rawStatus === 'pending') {
-            mappedStatus = 'Menunggu';
+            mappedStatus = 'Pending';
           } else if (rawStatus.includes('tolak') || rawStatus === 'rejected') {
-            mappedStatus = 'Ditolak';
+            mappedStatus = 'Rejected';
           } else {
-            mappedStatus = 'Disetujui';
+            mappedStatus = 'Approved';
           }
 
           return {
@@ -190,7 +191,6 @@ export default function ActivityLog() {
 
       worksheet.addRows(opnameData);
 
-      // 🔥 FIX WARNA BUNTUNG: Tembak Cell per Cell untuk Baris Header
       const headerRow = worksheet.getRow(1);
       headerRow.height = 25;
       for (let i = 1; i <= 8; i++) {
@@ -201,7 +201,6 @@ export default function ActivityLog() {
         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
       }
 
-      // 🔥 FIX BORDER BUNTUNG: Tembak Cell per Cell untuk Data Tengah
       for (let r = 2; r <= totalBaris + 1; r++) {
         const row = worksheet.getRow(r);
         for (let c = 1; c <= 8; c++) {
@@ -211,7 +210,6 @@ export default function ActivityLog() {
         }
       }
 
-      // 🔥 FIX WARNA BUNTUNG: Tembak Cell per Cell untuk Baris Total Paling Bawah
       const lastRow = worksheet.getRow(totalBaris + 2); 
       for (let i = 1; i <= 8; i++) {
         const cell = lastRow.getCell(i);
@@ -342,15 +340,16 @@ export default function ActivityLog() {
               <option value="Keluar">Keluar</option>
             </select>
 
+            {/* 🔥 KEMBALI KE SETELAN PABRIK */}
             <select 
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="bg-white border border-zinc-200 text-zinc-700 rounded-lg px-3 py-2 cursor-pointer font-medium text-sm focus:outline-none focus:border-[#00664b]"
             >
               <option value="Semua Status">Semua Status</option>
-              <option value="Disetujui">Disetujui</option>
-              <option value="Menunggu">Menunggu</option>
-              <option value="Ditolak">Ditolak</option>
+              <option value="Approved">Approved</option>
+              <option value="Pending">Pending</option>
+              <option value="Rejected">Rejected</option>
             </select>
           </div>
         </div>
@@ -437,9 +436,13 @@ export default function ActivityLog() {
                   <div className="flex gap-4 text-xs text-zinc-400 pt-1">
                     <span><Hash size={12} className="inline mr-1" />{item.id}</span>
                     <span><Clock size={12} className="inline mr-1" />{item.date}</span>
-                    {item.type === 'Keluar' && (
+                    
+                    {item.type === 'Keluar' ? (
                       <span className="text-[#00664b] font-medium"><MapPin size={12} className="inline mr-1" />{item.unit}</span>
+                    ) : (
+                      <span className="text-zinc-500 font-medium"><MapPin size={12} className="inline mr-1" />Gudang Pusat</span>
                     )}
+                    
                   </div>
                 </div>
 
@@ -448,13 +451,14 @@ export default function ActivityLog() {
                     <Package size={14} className="inline mr-1" /> {item.type}
                   </span>
                   
+                  {/* 🔥 KEMBALI KE SETELAN PABRIK */}
                   <span className={`px-3 py-1.5 rounded-md text-xs font-bold ${
-                    item.status === 'Disetujui' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                    item.status === 'Menunggu' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'
+                    item.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                    item.status === 'Pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'
                   }`}>
-                    {item.status === 'Disetujui' && <CheckCircle2 size={14} className="inline mr-1" />}
-                    {item.status === 'Menunggu' && <Clock size={14} className="inline mr-1" />}
-                    {item.status === 'Ditolak' && <XCircle size={14} className="inline mr-1" />}
+                    {item.status === 'Approved' && <CheckCircle2 size={14} className="inline mr-1" />}
+                    {item.status === 'Pending' && <Clock size={14} className="inline mr-1" />}
+                    {item.status === 'Rejected' && <XCircle size={14} className="inline mr-1" />}
                     {item.status}
                   </span>
                 </div>

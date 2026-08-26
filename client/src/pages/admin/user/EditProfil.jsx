@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Shield, Camera, Save, Building, Briefcase, Layers } from 'lucide-react';
+import { User, Shield, Camera, Save, Building, Briefcase, Layers, CheckCircle2, XCircle } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient'; 
 import toast from 'react-hot-toast';
 
@@ -16,8 +16,9 @@ export default function EditProfil() {
     namaLengkap: '',
     nipPegawai: '',
     cabang: '',       // Untuk KC Semarang, dll (kolom 'unit' di DB)
-    unitKerja: '',    // Untuk CWO, FA & FD, dll (kolom 'unit_kerja' di DB)
+    unitKerja: '',    // Untuk Admin, CWO, FA & FD, dll (kolom 'unit_kerja' di DB)
     jabatan: '',      // Untuk role (Admin/Manager/User)
+    isSuspended: false, // Status aktif / ditangguhkan
     avatar: null
   });
 
@@ -53,9 +54,10 @@ export default function EditProfil() {
         setProfile({
           namaLengkap: data.nama_lengkap || data.username || '',
           nipPegawai: data.staff_id || '-',
-          cabang: data.unit || '',                
+          cabang: data.unit || '',                     
           unitKerja: data.unit_kerja || '',       
           jabatan: data.role ? data.role.charAt(0).toUpperCase() + data.role.slice(1) : 'User',
+          isSuspended: data.is_suspended || false,
           avatar: data.avatar_url || null
         });
       }
@@ -82,12 +84,10 @@ export default function EditProfil() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    // Auto-capitalize khusus untuk field nama lengkap
     const finalValue = name === 'namaLengkap' ? toTitleCase(value) : value;
     setProfile(prev => ({ ...prev, [name]: finalValue }));
   };
 
-  // SIMPAN PERUBAHAN KE DATABASE SUPABASE
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -97,7 +97,6 @@ export default function EditProfil() {
     try {
       let avatarUrl = profile.avatar;
 
-      // Jika ada file foto baru, upload dulu ke Supabase Storage
       if (selectedFile) {
         const fileExt = selectedFile.name.split('.').pop();
         const fileName = `${userEmail.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.${fileExt}`;
@@ -116,7 +115,6 @@ export default function EditProfil() {
         avatarUrl = publicURLData.publicUrl;
       }
 
-      // Update data di tabel user_roles
       const { error: updateError } = await supabase
         .from('user_roles')
         .update({
@@ -130,14 +128,26 @@ export default function EditProfil() {
 
       if (updateError) throw updateError;
 
-      // Update Session LocalStorage biar UI Header update otomatis
-      localStorage.setItem('userProfile', JSON.stringify({
+      // 🔥 FIX AGAR TIDAK FORCE CLOSE KE LANDING PAGE (MERGE SESSION LAMA)
+      const existingSession = JSON.parse(localStorage.getItem('userProfile')) || JSON.parse(localStorage.getItem('userSession')) || {};
+      
+      const updatedSession = {
+        ...existingSession,
         email: userEmail,
         namaLengkap: profile.namaLengkap,
+        username: profile.namaLengkap,
         divisi: profile.cabang,
+        unit: profile.cabang,
+        unit_kerja: profile.unitKerja,
         jabatan: profile.jabatan,
+        role: existingSession.role || profile.jabatan.toLowerCase(),
         avatar: avatarUrl
-      }));
+      };
+
+      localStorage.setItem('userProfile', JSON.stringify(updatedSession));
+      if (localStorage.getItem('userSession')) {
+        localStorage.setItem('userSession', JSON.stringify(updatedSession));
+      }
 
       toast.success('Profil berhasil diperbarui!', { id: toastId });
       window.dispatchEvent(new Event('profileUpdated'));
@@ -217,7 +227,7 @@ export default function EditProfil() {
 
             {/* ROW 2: CABANG & UNIT KERJA */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Unit / Cabang</label>
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Cabang</label>
               <div className="relative flex items-center">
                 <Building size={16} className="absolute left-3 text-zinc-400 z-10 pointer-events-none" />
                 <select 
@@ -240,35 +250,30 @@ export default function EditProfil() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Divisi / Unit Kerja</label>
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Unit Kerja</label>
               <div className="relative flex items-center">
-                <Layers size={16} className="absolute left-3 text-zinc-400 z-10 pointer-events-none" />
-                <select 
+                <Layers size={16} className="absolute left-3 text-zinc-400" />
+                <input 
+                  type="text" 
                   name="unitKerja" 
                   value={profile.unitKerja} 
-                  onChange={handleChange} 
-                  className="w-full pl-10 pr-8 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:border-[#58a27d] focus:bg-white font-medium text-zinc-800 transition-colors cursor-pointer appearance-none" 
-                  required
-                >
-                  <option value="" disabled hidden>Pilih Divisi</option>
-                  <option value="CWO">CWO</option>
-                  <option value="FA & FD">FA & FD</option>
-                  <option value="Accounting">Accounting</option>
-                  <option value="Operasional">Operasional</option>
-                  <option value="Teller">Teller</option>
-                  <option value="FS">FS</option>
-                  <option value="CS">CS</option>
-                  <option value="Commercial">Commercial</option>
-                  <option value="Sekretaris">Sekretaris</option>
-                  <option value="Funding">Funding</option>
-                  <option value="Consumer">Consumer</option>
-                </select>
+                  disabled 
+                  className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" 
+                />
               </div>
             </div>
 
-            {/* ROW 3: JABATAN (FULL WIDTH COL-SPAN-2) */}
-            <div className="space-y-1.5 sm:col-span-2">
-              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Jabatan / Role</label>
+            {/* ROW 3: STATUS AKUN DI KIRI, JABATAN DI KANAN */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Status Hak Akses</label>
+              <div className={`w-full px-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm font-semibold flex items-center gap-2 ${profile.isSuspended ? 'text-red-600' : 'text-emerald-700'}`}>
+                {profile.isSuspended ? <XCircle size={16} className="text-red-500" /> : <CheckCircle2 size={16} className="text-emerald-500" />}
+                <span>{profile.isSuspended ? 'Ditangguhkan (Suspend)' : 'Aktif'}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Role</label>
               <div className="relative flex items-center">
                 <Briefcase size={16} className="absolute left-3 text-zinc-400" />
                 <input type="text" name="jabatan" value={profile.jabatan} disabled className="w-full pl-10 pr-4 py-2 bg-zinc-100 border border-zinc-200 rounded-lg text-sm text-zinc-500 font-medium cursor-not-allowed" />
