@@ -79,7 +79,7 @@ export default function Bantuan() {
           </h2>
           <div className="grid md:grid-cols-2 gap-4">
             <a 
-              href="mailto:inventory.bsn@gmail.com"
+              href="mailto:chicoramadhan8@gmail.com"
               className="group p-5 bg-white border border-slate-200/80 rounded-2xl shadow-sm hover:shadow-md hover:border-emerald-300 transition-all flex items-start gap-4 cursor-pointer"
             >
               <div className="p-3 bg-emerald-50 text-[#00664b] rounded-xl group-hover:bg-[#00664b] group-hover:text-white transition-colors shrink-0">
@@ -89,7 +89,7 @@ export default function Bantuan() {
                 <h3 className="font-bold text-slate-800 text-sm group-hover:text-[#00664b] transition-colors">
                   Email Support
                 </h3>
-                <p className="text-xs font-semibold text-slate-500 mt-1">inventory.bsn@gmail.com</p>
+                <p className="text-xs font-semibold text-slate-500 mt-1">chicoramadhan8@gmail.com</p>
               </div>
             </a>
 
