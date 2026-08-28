@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Clock, CheckCircle2, XCircle, Package, Hash, Download, Calendar, ArrowDownRight, ArrowUpRight, MapPin } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { supabase } from '../../../../supabaseClient';
 import toast from 'react-hot-toast';
 import ExcelJS from 'exceljs';
@@ -21,6 +20,9 @@ export default function ActivityLog() {
   const [exportType, setExportType] = useState('bulanan'); 
   const [exportMonth, setExportMonth] = useState(new Date().getMonth()); 
   const [exportYear, setExportYear] = useState(new Date().getFullYear()); 
+
+  const bulanList = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const tahunList = ["2024", "2025", "2026", "2027"];
 
   useEffect(() => {
     fetchLogs();
@@ -71,7 +73,6 @@ export default function ActivityLog() {
           const matchedUser = usersData?.find(u => u.username === item.requester);
           const unitKerja = matchedUser?.unit_kerja || 'Belum Ditentukan';
 
-          // 🔥 KEMBALI KE SETELAN PABRIK: APPROVED / PENDING / REJECTED
           let mappedStatus = 'Approved';
           const rawStatus = (item.status || '').toLowerCase();
           
@@ -90,7 +91,7 @@ export default function ActivityLog() {
             itemName: item.item_name,
             qty: item.qty,
             dateRaw: item.created_at ? new Date(item.created_at) : new Date(),
-            date: item.date || new Date(item.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+            date: item.date || new Date(item.created_at).toISOString().split('T')[0],
             status: mappedStatus,
             type: normalizedType,
             unit: targetUnit 
@@ -105,6 +106,9 @@ export default function ActivityLog() {
     }
   };
 
+  // =====================================================================
+  // 🟢 EXPORT 1: LAPORAN OPNAME STOK
+  // =====================================================================
   const exportLaporanOpname = async () => {
     setIsExportModalOpen(false); 
     const toastId = toast.loading('Menyiapkan rekapitulasi stok...');
@@ -114,11 +118,11 @@ export default function ActivityLog() {
       if (exportType === 'tahunan') {
         startOfPeriod = new Date(exportYear, 0, 1).toISOString();
         endOfPeriod = new Date(exportYear, 11, 31, 23, 59, 59, 999).toISOString();
-        namaPeriode = `Tahun_${exportYear}`;
+        namaPeriode = `Tahun ${exportYear}`;
       } else {
         startOfPeriod = new Date(exportYear, exportMonth, 1).toISOString();
         endOfPeriod = new Date(exportYear, exportMonth + 1, 0, 23, 59, 59, 999).toISOString();
-        namaPeriode = new Date(exportYear, exportMonth).toLocaleString('id-ID', { month: 'long', year: 'numeric' });
+        namaPeriode = `${bulanList[exportMonth]} ${exportYear}`;
       }
 
       const { data: validItems, error: itemsError } = await supabase
@@ -130,14 +134,22 @@ export default function ActivityLog() {
       if (itemsError) throw itemsError;
 
       if (!validItems || validItems.length === 0) {
-        toast.error(`Data kosong di ${namaPeriode.replace('_', ' ')}.`, { id: toastId });
+        toast.error(`Data kosong di ${namaPeriode}.`, { id: toastId });
         return; 
       }
 
-      const { data: reqData } = await supabase.from('request_items').select(`kode_barang, jumlah_diminta, jumlah_disetujui, requests (status)`).gte('created_at', startOfPeriod).lte('created_at', endOfPeriod);
+      const { data: reqData } = await supabase
+        .from('request_items')
+        .select(`kode_barang, jumlah_diminta, jumlah_disetujui, requests (status)`)
+        .gte('created_at', startOfPeriod)
+        .lte('created_at', endOfPeriod);
       const validReqData = reqData || [];
 
-      const { data: inData } = await supabase.from('stock_in').select('kode_barang, jumlah_masuk').gte('created_at', startOfPeriod).lte('created_at', endOfPeriod);
+      const { data: inData } = await supabase
+        .from('stock_in')
+        .select('kode_barang, jumlah_masuk')
+        .gte('created_at', startOfPeriod)
+        .lte('created_at', endOfPeriod);
       const validInData = inData || [];
 
       const opnameData = validItems.map((item, index) => {
@@ -150,7 +162,6 @@ export default function ActivityLog() {
         }, 0);
 
         const totalMasuk = validInData.filter(r => r.kode_barang === item.id).reduce((sum, curr) => sum + Number(curr.jumlah_masuk || 0), 0);
-        
         const stokSekarang = Number(item.stock || 0);
         const stokAwal = stokSekarang - totalMasuk + totalKeluar;
 
@@ -166,87 +177,225 @@ export default function ActivityLog() {
         };
       });
 
-      const totalBaris = opnameData.length;
-      opnameData.push({
-        no: '', kode: '', nama: 'TOTAL KESELURUHAN', kategori: '',
-        awal: opnameData.reduce((s, i) => s + (Number(i.awal) || 0), 0),
-        masuk: opnameData.reduce((s, i) => s + (Number(i.masuk) || 0), 0),
-        keluar: opnameData.reduce((s, i) => s + (Number(i.keluar) || 0), 0),
-        akhir: opnameData.reduce((s, i) => s + (Number(i.akhir) || 0), 0),
-      });
-
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(`Rekap ${namaPeriode.replace('_', ' ')}`);
+      const worksheet = workbook.addWorksheet('Laporan Opname');
 
       worksheet.columns = [
-        { header: 'No', key: 'no', width: 6 },
-        { header: 'Kode Barang', key: 'kode', width: 16 },
-        { header: 'Nama Barang', key: 'nama', width: 32 },
-        { header: 'Kategori', key: 'kategori', width: 22 },
-        { header: 'Stok Awal', key: 'awal', width: 15 },
-        { header: 'Barang Masuk', key: 'masuk', width: 16 },
-        { header: 'Barang Keluar', key: 'keluar', width: 16 },
-        { header: 'Stok Akhir', key: 'akhir', width: 15 }
+        { key: 'no', width: 8 },
+        { key: 'kode', width: 18 },
+        { key: 'nama', width: 36 },
+        { key: 'kategori', width: 24 },
+        { key: 'awal', width: 16 },
+        { key: 'masuk', width: 16 },
+        { key: 'keluar', width: 16 },
+        { key: 'akhir', width: 16 }
       ];
 
-      worksheet.addRows(opnameData);
+      worksheet.mergeCells('A1:H1');
+      const titleCell = worksheet.getCell('A1');
+      titleCell.value = 'LAPORAN REKAPITULASI OPNAME STOK INVENTARIS';
+      titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FF00664B' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
-      const headerRow = worksheet.getRow(1);
-      headerRow.height = 25;
-      for (let i = 1; i <= 8; i++) {
-        const cell = headerRow.getCell(i);
-        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; 
+      worksheet.mergeCells('A2:H2');
+      const subtitleCell = worksheet.getCell('A2');
+      subtitleCell.value = `BADAN STANDARDISASI NASIONAL (BSN) — Periode: ${namaPeriode}`;
+      subtitleCell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF555555' } };
+      subtitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      worksheet.getRow(3).height = 10;
+
+      const headers = ['No', 'Kode Barang', 'Nama Barang', 'Kategori', 'Stok Awal', 'Barang Masuk', 'Barang Keluar', 'Stok Akhir'];
+      const headerRow = worksheet.getRow(4);
+      headerRow.height = 28;
+
+      headers.forEach((h, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00664B' } };
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
-        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-      }
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF004D38' } },
+          bottom: { style: 'medium', color: { argb: 'FF004D38' } },
+          left: { style: 'thin', color: { argb: 'FFE0E0E0' } },
+          right: { style: 'thin', color: { argb: 'FFE0E0E0' } }
+        };
+      });
 
-      for (let r = 2; r <= totalBaris + 1; r++) {
-        const row = worksheet.getRow(r);
+      let startRow = 5;
+      opnameData.forEach((item, index) => {
+        const row = worksheet.getRow(startRow + index);
+        row.height = 22;
+        row.values = [item.no, item.kode, item.nama, item.kategori, item.awal, item.masuk, item.keluar, item.akhir];
+
+        const isEven = index % 2 === 1;
+        const rowBgColor = isEven ? 'FFF9FBF9' : 'FFFFFFFF';
+
         for (let c = 1; c <= 8; c++) {
           const cell = row.getCell(c);
-          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-          cell.alignment = { vertical: 'middle', horizontal: c === 3 ? 'left' : 'center' };
-        }
-      }
+          cell.font = { name: 'Arial', size: 10 };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBgColor } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+          };
 
-      const lastRow = worksheet.getRow(totalBaris + 2); 
-      for (let i = 1; i <= 8; i++) {
-        const cell = lastRow.getCell(i);
-        cell.font = { bold: true };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE047' } };
-        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-        cell.alignment = { vertical: 'middle', horizontal: i === 3 ? 'left' : 'center' };
+          if (c >= 5) {
+            cell.numFmt = '#,##0';
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          } else if (c === 3) {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          } else {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          }
+        }
+      });
+
+      const lastDataRow = startRow + opnameData.length - 1;
+      const totalRow = worksheet.getRow(lastDataRow + 1);
+      totalRow.height = 26;
+
+      worksheet.mergeCells(`A${lastDataRow + 1}:D${lastDataRow + 1}`);
+      const totalLabelCell = totalRow.getCell(1);
+      totalLabelCell.value = 'TOTAL KESELURUHAN';
+      totalLabelCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1F2937' } };
+      totalLabelCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const columnsFormula = ['E', 'F', 'G', 'H'];
+      columnsFormula.forEach((col, idx) => {
+        const cell = totalRow.getCell(5 + idx);
+        cell.value = { formula: `SUM(${col}${startRow}:${col}${lastDataRow})` };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF00664B' } };
+        cell.numFmt = '#,##0';
+        cell.alignment = { vertical: 'middle', horizontal: 'right' };
+      });
+
+      for (let c = 1; c <= 8; c++) {
+        const cell = totalRow.getCell(c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF08A' } };
+        cell.border = {
+          top: { style: 'double', color: { argb: 'FF00664B' } },
+          bottom: { style: 'double', color: { argb: 'FF00664B' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
       }
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      saveAs(blob, `Laporan_Opname_${namaPeriode}.xlsx`);
+      saveAs(blob, `Laporan_Opname_${namaPeriode.replace(/\s+/g, '_')}.xlsx`);
       
-      toast.success(`Laporan ${namaPeriode.replace('_', ' ')} berhasil diunduh!`, { id: toastId });
+      toast.success(`Laporan ${namaPeriode} berhasil diunduh!`, { id: toastId });
     } catch (error) { 
       toast.error(`Gagal: ${error.message}`, { id: toastId, duration: 6000 }); 
     }
   };
 
-  const handleExportLog = () => {
-    const exportData = filteredHistory.map(item => ({
-      "ID Transaksi": item.id,
-      "Pemohon/Aktor": item.requester,
-      "Unit Kerja": item.unitKerja, 
-      "Jenis": item.type,
-      "Barang": item.itemName,
-      "Jumlah": item.qty,
-      "Unit Tujuan": item.type === 'Keluar' ? item.unit : 'Gudang Pusat',
-      "Tanggal": item.date,
-      "Status": item.status
-    }));
+  // =====================================================================
+  // 🟢 EXPORT 2: LOG AKTIVITAS (SESUAI DENGAN GAMBAR PRESISI)
+  // =====================================================================
+  const handleExportLog = async () => {
+    const toastId = toast.loading('Memproses export log aktivitas...');
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Log Aktifitas BSN');
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Logistik");
-    XLSX.writeFile(workbook, "Laporan_Activity_Log_BSN.xlsx");
-    toast.success("Log Aktivitas berhasil di-export!");
+      // Lebar kolom sesuai kebutuhan
+      worksheet.columns = [
+        { key: 'no', width: 6 },
+        { key: 'id', width: 22 },
+        { key: 'date', width: 16 },
+        { key: 'requester', width: 20 },
+        { key: 'unitKerja', width: 22 },
+        { key: 'type', width: 12 },
+        { key: 'itemName', width: 32 },
+        { key: 'qty', width: 12 },
+        { key: 'unit', width: 22 },
+        { key: 'status', width: 16 }
+      ];
+
+      // Row 1: Table Header langsung di paling atas
+      const headers = ['No', 'ID Transaksi', 'Tanggal', 'Pemohon/Aktor', 'Unit Kerja', 'Jenis', 'Nama Barang', 'Jumlah', 'Cabang Tujuan', 'Status'];
+      const headerRow = worksheet.getRow(1);
+      headerRow.height = 24;
+
+      headers.forEach((h, idx) => {
+        const cell = headerRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00664B' } }; // Green Dark Emerald BSN
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF000000' } },
+          bottom: { style: 'thin', color: { argb: 'FF000000' } },
+          left: { style: 'thin', color: { argb: 'FF000000' } },
+          right: { style: 'thin', color: { argb: 'FF000000' } }
+        };
+      });
+
+      // Data Rows mulai dari Row 2
+      filteredHistory.forEach((item, index) => {
+        const row = worksheet.getRow(2 + index);
+        row.height = 20;
+
+        // Tanggal format YYYY-MM-DD sesuai sampel gambar
+        let formattedDate = item.date;
+        if (item.dateRaw instanceof Date && !isNaN(item.dateRaw)) {
+          const yyyy = item.dateRaw.getFullYear();
+          const mm = String(item.dateRaw.getMonth() + 1).padStart(2, '0');
+          const dd = String(item.dateRaw.getDate()).padStart(2, '0');
+          formattedDate = `${yyyy}-${mm}-${dd}`;
+        }
+
+        row.values = [
+          index + 1,
+          item.id,
+          formattedDate,
+          item.requester,
+          item.unitKerja,
+          item.type,
+          item.itemName,
+          Number(item.qty) || 0,
+          item.type === 'Keluar' ? item.unit : 'Gudang Pusat',
+          item.status
+        ];
+
+        for (let c = 1; c <= 10; c++) {
+          const cell = row.getCell(c);
+          cell.font = { name: 'Arial', size: 9.5 };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FF000000' } },
+            bottom: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: 'thin', color: { argb: 'FF000000' } },
+            right: { style: 'thin', color: { argb: 'FF000000' } }
+          };
+
+          // Alignment persis Excel sampel:
+          // Nama barang (c=7) & Pemohon/Aktor (c=4) & Unit Kerja (c=5) -> Rata Kiri
+          // Jumlah (c=8) -> Rata Kanan
+          // Lainnya -> Rata Tengah
+          if (c === 7 || c === 4 || c === 5) {
+            cell.alignment = { vertical: 'middle', horizontal: 'left' };
+          } else if (c === 8) {
+            cell.numFmt = '#,##0';
+            cell.alignment = { vertical: 'middle', horizontal: 'right' };
+          } else {
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          }
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `Laporan_Activity_Log_BSN.xlsx`);
+
+      toast.success("Log Aktivitas berhasil di-export!", { id: toastId });
+    } catch (err) {
+      toast.error(`Gagal export log: ${err.message}`, { id: toastId });
+    }
   };
 
   const filteredHistory = history.filter(item => {
@@ -261,8 +410,7 @@ export default function ActivityLog() {
 
     if (periodMode === 'Berdasarkan Bulan') {
       if (selectedMonth) {
-        const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-        const itemMonthName = monthNames[item.dateRaw.getMonth()];
+        const itemMonthName = bulanList[item.dateRaw.getMonth()];
         if (itemMonthName !== selectedMonth) return false;
       }
       if (selectedYear) {
@@ -286,9 +434,6 @@ export default function ActivityLog() {
 
     return matchSearch;
   });
-
-  const bulanList = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-  const tahunList = ["2024", "2025", "2026", "2027"];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 relative">
@@ -340,7 +485,6 @@ export default function ActivityLog() {
               <option value="Keluar">Keluar</option>
             </select>
 
-            {/* 🔥 KEMBALI KE SETELAN PABRIK */}
             <select 
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -451,7 +595,6 @@ export default function ActivityLog() {
                     <Package size={14} className="inline mr-1" /> {item.type}
                   </span>
                   
-                  {/* 🔥 KEMBALI KE SETELAN PABRIK */}
                   <span className={`px-3 py-1.5 rounded-md text-xs font-bold ${
                     item.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                     item.status === 'Pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-700 border-red-200'
