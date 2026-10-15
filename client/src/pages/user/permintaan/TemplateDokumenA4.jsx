@@ -133,7 +133,7 @@ const TemplateDokumenA4 = React.forwardRef(({ formData, daftarBarang = [], admin
               {formData?.qrAdmin ? (
                 <div>
                   <img src={formData.qrAdmin} alt="QR Admin" style={{ width: '45px', height: '45px', margin: '0 auto 4px auto', display: 'block' }} />
-                  <div style={{ fontWeight: 'bold', textDecoration: 'underline' }}>{formData?.adminName || 'Mas Agus'}</div>
+                  <div style={{ fontWeight: 'bold', textDecoration: 'underline' }}>{formData?.adminName || 'Admin'}</div>
                 </div>
               ) : (
                 <div>

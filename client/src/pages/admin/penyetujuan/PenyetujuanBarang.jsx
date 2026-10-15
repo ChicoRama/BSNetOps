@@ -285,7 +285,7 @@ export default function PenyetujuanBarang() {
     namaLengkap: selectedRequest.pemohon,
     status: selectedRequest.status,
     isApproved: isApprovedByManager,
-    adminName: 'Mas Agus',
+    adminName: 'Admin',
     managerName: 'Atasan / Manager',
     qrAdmin: qrAdmin,
     qrManager: qrManager,

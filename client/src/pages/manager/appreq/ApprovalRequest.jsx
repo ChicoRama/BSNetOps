@@ -308,7 +308,11 @@ export default function ApprovalRequest() {
 
   const isApproved = activeDetail?.status?.toLowerCase() === 'selesai';
 
-  const qrAdmin = isApproved ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Admin_Agus_ID:${activeDetail?.id}` : null;
+  // 🔥 Request yang sampai ke antrian Manager (Menunggu Manager/Selesai/Ditolak) sudah pasti
+  // sudah di-ACC & diserahkan oleh Admin duluan, jadi QR Admin tidak perlu nunggu status "Selesai".
+  const isHandedOverByAdmin = !!activeDetail;
+
+  const qrAdmin = isHandedOverByAdmin ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Admin_Agus_ID:${activeDetail?.id}` : null;
   const qrManager = isApproved ? `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=Disetujui_Oleh_Manager_${namaManager.replace(/\s+/g, '_')}_ID:${activeDetail?.id}` : null;
 
   const mappedFormData = activeDetail ? {
@@ -318,7 +322,7 @@ export default function ApprovalRequest() {
     namaLengkap: activeDetail.namaPemohon,
     status: activeDetail.status,
     isApproved: isApproved,
-    adminName: 'Mas Agus',
+    adminName: 'Admin',
     managerName: namaManager,
     qrAdmin: qrAdmin,
     qrManager: qrManager
